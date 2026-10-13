@@ -93,18 +93,28 @@ function useRunScopedPlan() {
         persistClientSettingsPatch,
       ).then(async ({ failedEnvironments, savedEnvironmentCount }) => {
         const bridge = window.sandboxT3;
-        if (modelDefault !== undefined && bridge?.saveModelDefault) {
+        if (
+          modelDefault !== undefined &&
+          bridge?.targetKind === "managed-task" &&
+          bridge.saveModelDefault
+        ) {
           try {
-          const localEnvironment = bridge.getEnvironmentId?.();
-          if (localEnvironment &&
-          plan.serverWrites.some(write => write.environmentId === localEnvironment) &&
-          !failedEnvironments.some(write => write.environmentId === localEnvironment)) {
-          await bridge.saveModelDefault(localEnvironment, modelDefault);
-          toastManager.add({ type: "success", title: "Default saved for future tasks" });
-          }
+            const localEnvironment = bridge.getEnvironmentId?.();
+            if (
+              localEnvironment &&
+              plan.serverWrites.some((write) => write.environmentId === localEnvironment) &&
+              !failedEnvironments.some((write) => write.environmentId === localEnvironment)
+            ) {
+              await bridge.saveModelDefault(localEnvironment, modelDefault);
+              toastManager.add({ type: "success", title: "Default saved for future tasks" });
+            }
           } catch {
-            toastManager.add({ type: "error", title: "Task default saved; future-task default not saved",
-              description: "The current task keeps its setting. Retry the explicit default-model setting to save it for future tasks." });
+            toastManager.add({
+              type: "error",
+              title: "Task default saved; future-task default not saved",
+              description:
+                "The current task keeps its setting. Retry the explicit default-model setting to save it for future tasks.",
+            });
           }
         }
         if (failedEnvironments.length === 0) return;
@@ -124,7 +134,8 @@ export function useUpdateScopedSettings() {
   const { scope, environments } = useSettingsScope();
   const run = useRunScopedPlan();
   return useCallback(
-    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch), patch.defaultModelSelection),
+    (patch: ScopedSettingsPatch) =>
+      run(planScopedSettingsPatch(scope, environments, patch), patch.defaultModelSelection),
     [environments, run, scope],
   );
 }
@@ -140,7 +151,10 @@ export function useClearScopedSettings() {
   return useCallback(
     (keys: readonly ProjectScopedServerSettingKey[]) => {
       if (context === null) return;
-      run(planScopedSettingsClear(context.scope, context.environments, keys), keys.includes("defaultModelSelection") ? null : undefined);
+      run(
+        planScopedSettingsClear(context.scope, context.environments, keys),
+        keys.includes("defaultModelSelection") ? null : undefined,
+      );
     },
     [context, run],
   );
@@ -153,7 +167,10 @@ export function useClearProjectOverrides() {
   return useCallback(
     (entries: readonly ProjectOverrideEntry[], keys: readonly ProjectScopedServerSettingKey[]) => {
       if (context === null) return;
-      run(planProjectOverridesClear(context.environments, entries, keys), keys.includes("defaultModelSelection") ? null : undefined);
+      run(
+        planProjectOverridesClear(context.environments, entries, keys),
+        keys.includes("defaultModelSelection") ? null : undefined,
+      );
     },
     [context, run],
   );
