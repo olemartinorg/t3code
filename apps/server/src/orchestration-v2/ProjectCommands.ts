@@ -31,6 +31,7 @@ export interface ProjectMetaUpdateCommand {
   readonly projectId: ProjectId;
   readonly title?: string;
   readonly workspaceRoot?: string;
+  readonly shareWorkspace?: boolean;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
@@ -202,7 +203,7 @@ export function planProjectCommand(input: {
           }
         }
       }
-      if (command.workspaceRoot !== undefined) {
+      if (command.workspaceRoot !== undefined && command.shareWorkspace !== true) {
         const conflict = requireWorkspaceAvailable(command.workspaceRoot);
         if (conflict !== undefined) return Result.fail(conflict);
       }

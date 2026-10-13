@@ -253,3 +253,15 @@ describe("planProjectCommand", () => {
     assert.deepEqual(event.payload, { projectId, deletedAt: "2026-01-01T00:00:00.000Z" });
   });
 });
+
+
+it("only explicit shared-workspace rebind preserves multiple existing project groups at one root", () => {
+  const command = { type: "project.meta.update" as const, commandId: CommandId.make("restore"), projectId, workspaceRoot: "/home/agent" };
+  const state = { project: row(), workspaceOwner: row({ projectId: ProjectId.make("other-history"), workspaceRoot: "/home/agent" }) };
+  assert.isTrue(Result.isFailure(plan(command, state)));
+  const event = Result.getOrThrow(plan({ ...command, shareWorkspace: true }, state));
+  assert.equal(event.type, "project.meta-updated");
+  assert.equal(event.aggregateId, projectId);
+  assert.equal((event.payload as { workspaceRoot: string }).workspaceRoot, "/home/agent");
+  assert.isFalse("shareWorkspace" in event.payload);
+});
