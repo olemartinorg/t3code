@@ -167,6 +167,17 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
+if (typeof window !== "undefined") {
+  window.sandboxT3?.onState?.(() => {
+    // Use the native hydration owner; no raw storage inspection or synthetic writes.
+    void clientSettingsPersistenceQueue.then(() => {
+      clientSettingsHydrationGeneration++;
+      clientSettingsHydrationStatus = "pending";
+      void hydrateClientSettings().catch(() => undefined);
+    });
+  });
+}
+
 const defaultClientSettingsPersistence = (settings: ClientSettings): Promise<void> =>
   ensureLocalApi().persistence.setClientSettings(settings);
 
