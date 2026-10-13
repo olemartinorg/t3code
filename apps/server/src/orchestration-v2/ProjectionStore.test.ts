@@ -2950,9 +2950,16 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const json = yield* Schema.encodeEffect(OrchestrationV2ThreadShellJson)(sql);
         assert.deepEqual(json.pendingQuestions,sql.pendingQuestions.map(q=>({...q,createdAt:DateTime.formatIso(q.createdAt)})));
         assert.equal(sql.pendingRuntimeRequest?.id,"approval");
+        assert.equal(sql.pendingRuntimeRequest?.responseCapability, requests.get("approval")?.responseCapability.type);
+        assert.deepEqual(sql.pendingRuntimeRequest, memory.pendingRuntimeRequest);
+        assert.equal(json.pendingRuntimeRequest?.responseCapability, sql.pendingRuntimeRequest?.responseCapability);
         assert.isFalse(JSON.stringify(json.pendingQuestions).includes("Private"));
         return sql.pendingQuestions;
       });
+      yield* update("approval","command","not_resumable");
+      yield* observe;
+      yield* update("approval","command","message");
+      yield* observe;
       assert.deepEqual((yield* observe).map(q=>q.id),["free-text","inert","multiple","options"]);
       yield* update("inert","user_input","message");
       assert.equal((yield* observe).find(q=>q.id==="inert")?.responseCapability,"message");
