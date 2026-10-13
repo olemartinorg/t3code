@@ -533,6 +533,7 @@ export function buildLocalDraftThread(
     activeRunId: null,
     status: "idle",
     pendingRuntimeRequest: null,
+    pendingQuestions: [],
     latestVisibleMessage: null,
     latestUserMessageAt: null,
     hasActionableProposedPlan: false,

@@ -45,6 +45,7 @@ import {
   OrchestrationV2RunAttemptJson as OrchestrationV2RunAttemptJsonSchema,
   OrchestrationV2RunJson as OrchestrationV2RunJsonSchema,
   OrchestrationV2RuntimeRequestJson as OrchestrationV2RuntimeRequestJsonSchema,
+  OrchestrationV2PendingQuestionSummaryJson,
   OrchestrationV2SubagentJson as OrchestrationV2SubagentJsonSchema,
   OrchestrationV2TurnItemJson as OrchestrationV2TurnItemJsonSchema,
   orchestrationV2RunWorkStartedAt,
@@ -933,6 +934,7 @@ type ShellThreadRow = {
   readonly blocking_run_completed_at: string | null;
   readonly blocking_failure_payload_json: string | null;
   readonly pending_request_payload_json: string | null;
+  readonly pending_questions_json: string;
   readonly pending_secret_request_payload_json: string | null;
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
@@ -1341,6 +1343,13 @@ function secretRequestAsPendingInput(
   };
 }
 
+export function pendingQuestionsFromProjection(projection: Pick<OrchestrationV2ThreadProjection, "runtimeRequests" | "turnItems">): OrchestrationV2ThreadShell["pendingQuestions"] {
+  return projection.runtimeRequests.filter(request => request.kind === "user_input" && request.status === "pending" &&
+    projection.turnItems.some(item => item.type === "user_input_request" && item.requestId === request.id))
+    .map(request => ({ id: request.id, createdAt: request.createdAt, responseCapability: request.responseCapability.type }))
+    .toSorted((left, right) => DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
@@ -1451,6 +1460,7 @@ export function threadShellFromProjection(
             kind: pendingRuntimeRequest.kind,
             createdAt: pendingRuntimeRequest.createdAt,
           },
+    pendingQuestions: pendingQuestionsFromProjection(projection),
     // Thread detail owns message bodies. Keeping them out of shell rows makes
     // initial hydration and streaming updates independent of transcript size.
     latestVisibleMessage: null,
@@ -1553,6 +1563,7 @@ type ShellThreadState = {
   readonly lastErrorClass: OrchestrationV2ThreadShell["lastErrorClass"];
   readonly usageLimitResetAt: OrchestrationV2ThreadShell["usageLimitResetAt"];
   readonly pendingRuntimeRequest: OrchestrationV2ThreadProjection["runtimeRequests"][number] | null;
+  readonly pendingQuestions: OrchestrationV2ThreadShell["pendingQuestions"];
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
   readonly hasActionableProposedPlan: boolean;
@@ -1718,6 +1729,7 @@ function shellFromState(input: {
             kind: input.state.pendingRuntimeRequest.kind,
             createdAt: input.state.pendingRuntimeRequest.createdAt,
           },
+    pendingQuestions: input.state.pendingQuestions,
     latestVisibleMessage: null,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
@@ -5018,6 +5030,18 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 LIMIT 1
               ) AS pending_request_payload_json,
               (
+                SELECT json_group_array(json_object('id', q.runtime_request_id, 'createdAt', q.created_at,
+                  'responseCapability', json_extract(q.payload_json, '$.responseCapability.type')))
+                FROM (SELECT runtime_request_id, created_at, payload_json
+                  FROM orchestration_v2_projection_runtime_requests request
+                  WHERE request.thread_id = t.thread_id AND request.status = 'pending'
+                    AND json_extract(request.payload_json, '$.kind') = 'user_input'
+                    AND EXISTS (SELECT 1 FROM orchestration_v2_projection_turn_items item
+                      WHERE item.thread_id = t.thread_id AND item.type = 'user_input_request'
+                        AND json_extract(item.payload_json, '$.requestId') = request.runtime_request_id)
+                  ORDER BY request.created_at, request.runtime_request_id) q
+              ) AS pending_questions_json,
+              (
                 SELECT secret.payload_json
                 -- Keep runs outermost so completed history is never scanned for a pending secret.
                 FROM orchestration_v2_projection_runs r
@@ -5494,6 +5518,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.last_error,
           ),
           pendingRuntimeRequest,
+          pendingQuestions: yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(OrchestrationV2PendingQuestionSummaryJson)))(row.pending_questions_json),
           latestUserMessageAt:
             row.latest_user_message_at === null
               ? null

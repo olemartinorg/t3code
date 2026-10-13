@@ -1822,6 +1822,14 @@ export const OrchestrationV2PendingRuntimeRequestSummary = Schema.Struct({
 export type OrchestrationV2PendingRuntimeRequestSummary =
   typeof OrchestrationV2PendingRuntimeRequestSummary.Type;
 
+/** Question identity only; presentation and answers stay in thread detail. */
+export const OrchestrationV2PendingQuestionSummary = Schema.Struct({
+  id: RuntimeRequestId,
+  createdAt: Schema.DateTimeUtc,
+  responseCapability: Schema.Literals(["live", "message", "not_resumable"]),
+});
+export type OrchestrationV2PendingQuestionSummary = typeof OrchestrationV2PendingQuestionSummary.Type;
+
 export const OrchestrationV2LatestVisibleMessageSummary = Schema.Struct({
   id: MessageId,
   role: OrchestrationV2ConversationMessage.fields.role,
@@ -1869,6 +1877,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   lastErrorClass: Schema.optional(Schema.NullOr(OrchestrationV2ProviderFailureClass)),
   usageLimitResetAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pendingRuntimeRequest: Schema.NullOr(OrchestrationV2PendingRuntimeRequestSummary),
+  pendingQuestions: Schema.Array(OrchestrationV2PendingQuestionSummary),
   latestVisibleMessage: Schema.NullOr(OrchestrationV2LatestVisibleMessageSummary),
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtc),
   /**
@@ -2399,6 +2408,10 @@ export const OrchestrationV2PendingRuntimeRequestSummaryJson =
 export type OrchestrationV2PendingRuntimeRequestSummaryJson =
   typeof OrchestrationV2PendingRuntimeRequestSummaryJson.Type;
 
+export const OrchestrationV2PendingQuestionSummaryJson = OrchestrationV2PendingQuestionSummary.mapFields((fields) => ({
+  ...fields, createdAt: Schema.DateTimeUtcFromString,
+}));
+
 export const OrchestrationV2LatestVisibleMessageSummaryJson =
   OrchestrationV2LatestVisibleMessageSummary.mapFields((fields) => ({
     ...fields,
@@ -2414,6 +2427,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   latestRunCompletedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   activityRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pendingRuntimeRequest: Schema.NullOr(OrchestrationV2PendingRuntimeRequestSummaryJson),
+  pendingQuestions: Schema.Array(OrchestrationV2PendingQuestionSummaryJson),
   latestVisibleMessage: Schema.NullOr(OrchestrationV2LatestVisibleMessageSummaryJson),
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
