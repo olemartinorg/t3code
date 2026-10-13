@@ -4,7 +4,7 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
  * The thread details panel's pull request row: what the thread's pull request is, and the one
  * thing worth doing to it right now.
  *
- * The row itself opens the pull request in the right panel, exactly as it always has. Around
+ * The row itself is an ordinary link to the pull request. Around
  * that, the host's richer answer collapses into a single trailing slot, ranked by what unblocks
  * the merge next: "Resolve" on conflicts, "Ready" on a draft, "Fix" under failing checks, and
  * "Merge" only once the branch is clean and its checks pass. While checks run the slot reports
@@ -385,6 +385,7 @@ export function ThreadDetailsPrRow({
       </>
     ) : null;
 
+  const destinationUrl = detail?.url ?? pr?.url ?? status?.url;
   return (
     <>
       {detail ? (
@@ -398,7 +399,7 @@ export function ThreadDetailsPrRow({
                   size="sm"
                   part="link-primary"
                   aria-label={openAriaLabel}
-                  onClick={onOpen}
+                  render={<a href={destinationUrl} target="_blank" rel="noopener noreferrer" />}
                 />
               }
             >
@@ -454,7 +455,7 @@ export function ThreadDetailsPrRow({
                   size="sm"
                   part="link-primary"
                   aria-label={openAriaLabel}
-                  onClick={onOpen}
+                  render={<a href={destinationUrl} target="_blank" rel="noopener noreferrer" />}
                 />
               }
             >
@@ -474,7 +475,7 @@ export function ThreadDetailsPrRow({
                 size="sm"
                 part="row"
                 aria-label={openAriaLabel}
-                onClick={onOpen}
+                render={<a href={destinationUrl} target="_blank" rel="noopener noreferrer" />}
               />
             }
           >

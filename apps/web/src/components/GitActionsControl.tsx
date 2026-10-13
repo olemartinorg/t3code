@@ -22,7 +22,7 @@ import type {
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
-  type MouseEvent,
+  type MouseEvent, type ReactElement,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -1002,9 +1002,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  onClick={() => {
-                    void openLink(publishResult.repository.url).catch(() => undefined);
-                  }}
+                  render={<a href={publishResult.repository.url} target="_blank" rel="noopener noreferrer" />}
                 >
                   Open on {publishProviderLabel}
                 </Button>
@@ -1428,6 +1426,7 @@ export default function GitActionsControl({
       let toastActionProps: {
         children: string;
         onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+        render?: ReactElement;
       } | null = null;
       if (toastCta.kind === "run_action") {
         toastActionProps = {
@@ -1442,10 +1441,8 @@ export default function GitActionsControl({
       } else if (toastCta.kind === "open_pr") {
         toastActionProps = {
           children: toastCta.label,
-          onClick: (event) => {
-            closeResultToast();
-            openPrLink(event, toastCta.url);
-          },
+          render: <a href={toastCta.url} target="_blank" rel="noopener noreferrer" />,
+          onClick: () => closeResultToast(),
         };
       }
 

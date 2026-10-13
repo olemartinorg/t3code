@@ -35,7 +35,7 @@ interface Props {
   onRefresh: () => void;
   onSubmit: (url: string) => void;
   /** When provided, renders an "Open in browser" affordance to the right. */
-  onOpenInBrowser?: (() => void) | undefined;
+  externalBrowserUrl?: string | undefined;
   onCapture?: ((record: boolean) => void) | undefined;
   captureDisabled?: boolean | undefined;
   recording?: boolean | undefined;
@@ -78,7 +78,7 @@ export function PreviewChromeRow({
   onForward,
   onRefresh,
   onSubmit,
-  onOpenInBrowser,
+  externalBrowserUrl,
   onCapture,
   captureDisabled,
   recording,
@@ -207,7 +207,7 @@ export function PreviewChromeRow({
               }
             />
           </Tooltip>
-          {onOpenInBrowser && !inputFocused ? (
+          {externalBrowserUrl && !inputFocused ? (
             <InputGroupAddon align="inline-end">
               {/* Revealed on hover so a resting address bar reads as plain text. */}
               <span className="pointer-events-none flex opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover/address:pointer-events-auto group-hover/address:opacity-100">
@@ -217,7 +217,7 @@ export function PreviewChromeRow({
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={onOpenInBrowser}
+                        render={<a href={externalBrowserUrl} target="_blank" rel="noopener noreferrer" />}
                         aria-label="Open in system browser"
                         type="button"
                       />

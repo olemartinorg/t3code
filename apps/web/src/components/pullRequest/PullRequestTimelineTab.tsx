@@ -167,7 +167,7 @@ function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: s
       variant="ghost-muted"
       className="-mr-1 -mt-1 shrink-0"
       aria-label="Open activity on host"
-      onClick={() => onOpen(url)}
+      render={<a href={url} target="_blank" rel="noopener noreferrer" />}
     >
       <ExternalLinkIcon className="size-3" />
     </Button>
@@ -573,7 +573,7 @@ export function PullRequestTimelineTab({
   const orderedEvents = order === "newest" ? events : events.toReversed();
   const rows = groupPullRequestTimelineConversations(orderedEvents);
   const openOnHost = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    // URLs are rendered as ordinary anchors by OpenOnHostButton.
   };
 
   return (

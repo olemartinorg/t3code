@@ -1,7 +1,6 @@
 import type { ProviderAuthResponse } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 import { GhosttyTerminalSurface } from "../../terminal/ghostty/surface";
-import { ensureLocalApi } from "../../localApi";
 import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
 
 /** Loaded only for an interactive login. PTY input is serialized by the parent. */
@@ -40,12 +39,8 @@ export default function ProviderAuthTerminal({
         latest.current.onResponse({ type: "terminal", data: "", size: { cols, rows } }),
       onSelectionChange: () => {},
       beforeKey: (event) => event.key !== "Tab",
-      onLinkActivate: (url) => {
-        if (/^https?:\/\//i.test(url))
-          void ensureLocalApi()
-            .shell.openExternal(url)
-            .catch(() => setError("Could not open the provider link."));
-      },
+      // HTTP(S) output is rendered as ordinary anchors by the terminal surface.
+      onLinkActivate: () => {},
     })
       .then((terminal) => {
         if (disposed) {

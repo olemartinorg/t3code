@@ -9,7 +9,6 @@ import {
   injectHtmlRenderBootstrap,
   htmlRenderThemeMessage,
   readHtmlRenderContentHeight,
-  readHtmlRenderLinkRequest,
   readHtmlRenderReference,
 } from "./htmlRender.ts";
 import { T3_CODE_DARK_THEME_COLORS, T3_CODE_LIGHT_THEME_COLORS } from "./themePalettes.ts";
@@ -71,33 +70,6 @@ describe("injectHtmlRenderBootstrap", () => {
       injected.indexOf("<html><head>"),
     );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
-  });
-});
-
-describe("readHtmlRenderLinkRequest", () => {
-  it("accepts only http(s) URLs in an MCP Apps ui/open-link request", () => {
-    const link = (url: unknown) => ({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "ui/open-link",
-      params: { url },
-    });
-    expect(readHtmlRenderLinkRequest(link("https://example.com/a"))).toEqual({
-      id: 1,
-      url: "https://example.com/a",
-    });
-    expect(readHtmlRenderLinkRequest(link("javascript:alert(1)"))).toBeUndefined();
-    expect(readHtmlRenderLinkRequest(link("file:///etc/passwd"))).toBeUndefined();
-    expect(
-      readHtmlRenderLinkRequest({
-        jsonrpc: "2.0",
-        method: "ui/open-link",
-        params: { url: "https://example.com" },
-      }),
-    ).toBeUndefined();
-    expect(
-      readHtmlRenderLinkRequest({ type: "t3-html-render-link", url: "https://example.com" }),
-    ).toBeUndefined();
   });
 });
 

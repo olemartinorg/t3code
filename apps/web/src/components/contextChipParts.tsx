@@ -109,10 +109,9 @@ export function PullRequestChip(props: {
   const button = (
     <ContextChip
       kind={props.kind}
-      render={<button type="button" />}
+      render={<a href={props.metadata.url} target="_blank" rel="noopener noreferrer" />}
       aria-label={`Open ${props.kindLabel} ${props.label}: ${props.metadata.title}`}
       data-markdown-copy={props.copyMarkdown}
-      onClick={(event) => props.onOpen(event, props.metadata.url)}
     >
       <StateIcon />
       <ContextChipLabel>{props.label}</ContextChipLabel>

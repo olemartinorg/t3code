@@ -151,20 +151,10 @@ function PullRequestRowImpl({
           number={
             // The number carries the link, here as much as on the detail: a right-click on it
             // copies the pull request's own address rather than opening the editing menu.
-            <span
-              className={PULL_REQUEST_ROW_NUMBER_CLASS}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void showPullRequestLinkContextMenu({
-                  url: entry.url,
-                  openLabel: openOnHostLabel(entry.provider),
-                  position: { x: event.clientX, y: event.clientY },
-                });
-              }}
-            >
+            <a className={PULL_REQUEST_ROW_NUMBER_CLASS} href={entry.url}
+              target="_blank" rel="noopener noreferrer" onClick={event => event.stopPropagation()}>
               #{entry.number}
-            </span>
+            </a>
           }
           title={entry.title}
           signals={

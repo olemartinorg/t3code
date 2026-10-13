@@ -1,9 +1,7 @@
 import {
   htmlRenderThemeFragment,
   htmlRenderThemeMessage,
-  htmlRenderResult,
   readHtmlRenderContentHeight,
-  readHtmlRenderLinkRequest,
 } from "@t3tools/shared/htmlRender";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -81,30 +79,6 @@ export function HtmlRenderDocument(props: {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
   };
   useEffect(postTheme, [theme]);
-  // The page cannot open windows itself (an inline page runs unopened, and
-  // desktop sends any window to the browser). It asks the client, which opens
-  // the link only while this frame has focus and the reader has just used the
-  // app. A page can take focus by script, so this stops opens on load, not a
-  // page that waits for the reader's next click or key.
-  useEffect(() => {
-    const openLink = (event: MessageEvent) => {
-      const frame = frameRef.current;
-      const request = readHtmlRenderLinkRequest(event.data);
-      if (
-        request === undefined ||
-        frame === null ||
-        event.source !== frame.contentWindow ||
-        document.activeElement !== frame ||
-        navigator.userActivation?.isActive === false
-      ) {
-        return;
-      }
-      window.open(request.url, "_blank", "noopener,noreferrer");
-      frame.contentWindow?.postMessage(htmlRenderResult(request.id), "*");
-    };
-    window.addEventListener("message", openLink);
-    return () => window.removeEventListener("message", openLink);
-  }, []);
   const { onContentHeight } = props;
   // A page posts its height once per change, so listen from the commit that
   // inserts the frame; a passive effect could run after a fast page's first post.
@@ -125,7 +99,7 @@ export function HtmlRenderDocument(props: {
       src={src}
       title={props.title}
       // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
-      sandbox="allow-scripts allow-forms"
+      sandbox="allow-scripts allow-forms allow-popups"
       loading="lazy"
       onLoad={() => {
         setLoaded(true);

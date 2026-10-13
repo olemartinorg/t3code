@@ -270,7 +270,6 @@ export const HTML_RENDER_LAYOUT_GUIDE = [
 // (JSON-RPC over postMessage), so the same host code can later drive upstream
 // MCP apps: https://github.com/modelcontextprotocol/ext-apps
 const HOST_CONTEXT_CHANGED_METHOD = "ui/notifications/host-context-changed";
-const OPEN_LINK_METHOD = "ui/open-link";
 const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
 
 /** The content height in a framed render's `ui/notifications/size-changed` notification. */
@@ -283,24 +282,6 @@ export function readHtmlRenderContentHeight(data: unknown): number | undefined {
       ? (params as { height?: unknown }).height
       : undefined;
   return typeof height === "number" && Number.isFinite(height) && height > 0 ? height : undefined;
-}
-
-/** A render's `ui/open-link` request, if `data` is one with an http(s) URL. */
-export function readHtmlRenderLinkRequest(
-  data: unknown,
-): { readonly id: string | number; readonly url: string } | undefined {
-  if (typeof data !== "object" || data === null) return undefined;
-  const { jsonrpc, id, method, params } = data as Record<string, unknown>;
-  if (jsonrpc !== "2.0" || method !== OPEN_LINK_METHOD) return undefined;
-  if (typeof id !== "string" && typeof id !== "number") return undefined;
-  const url =
-    typeof params === "object" && params !== null ? (params as { url?: unknown }).url : undefined;
-  return typeof url === "string" && /^https?:\/\//i.test(url) ? { id, url } : undefined;
-}
-
-/** The empty result a client sends back for a render's request. */
-export function htmlRenderResult(id: string | number) {
-  return { jsonrpc: "2.0", id, result: {} } as const;
 }
 
 const THEME_FRAGMENT_KEY = "t3-theme";
@@ -336,12 +317,11 @@ function rootRule(theme: HtmlRenderTheme): string {
 // first paint is already themed. It rewrites its own <style> element rather
 // than setting inline properties, so a page's later `:root` rules still win,
 // then drops the fragment so a page's own hash routing never sees it. A link
-// the reader clicks to another page never replaces the page inside the thread:
-// a framed page asks its client to open it, and a top-level page (mobile)
-// opens it as a new window, which the client sends to the browser. A framed
-// page also reports its content height, measured as the server measures it,
-// so its client can fit the frame to the page.
-const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("t3-theme"),n=0;if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"t3-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);}})();`;
+// the reader follows to another web page remains an ordinary external anchor.
+// Mutation observation also covers links added or changed by the page after load,
+// before activation or copying. Fragments keep their own document navigation.
+// A framed page reports its height so its client can fit the frame to the page.
+const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("t3-theme");if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});function links(){document.querySelectorAll("a[href]").forEach(function(l){var u;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(l.getAttribute("href")!==u.href)l.setAttribute("href",u.href);l.setAttribute("target","_blank");l.setAttribute("rel","noopener noreferrer");});}document.addEventListener("DOMContentLoaded",links);links();if(window.MutationObserver)new MutationObserver(links).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["href"]});if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);}})();`;
 
 function bootstrapMarkup(markup: string): string {
   const dark = htmlRenderTheme(T3_CODE_DARK_THEME_COLORS, "dark");

@@ -697,12 +697,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     searchTerms: ["browser preview clicks buttons drag overlay capture"],
   },
-  {
-    id: "browser-link-target",
-    title: "Open links in",
-    to: "/settings/integrations",
-    searchTerms: ["links default browser in-app browser external open"],
-  },
+
   {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",

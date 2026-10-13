@@ -405,11 +405,6 @@ export function PreviewView({
     else if (previewBridge && runtimeTabId) void previewBridge.goForward(runtimeTabId);
   }, [isServerTab, runtimeTabId]);
 
-  const handleOpenInBrowser = useCallback(() => {
-    if (!localApi || !url) return;
-    void localApi.shell.openExternal(url).catch(() => undefined);
-  }, [url]);
-
   const handlePictureInPicture = useCallback(() => {
     if (!tabId) return;
     if (miniPlayerTabId === tabId) {
@@ -899,7 +894,7 @@ export function PreviewView({
         onForward={handleForward}
         onRefresh={handleRefresh}
         onSubmit={(next) => void handleSubmitUrl(next)}
-        onOpenInBrowser={tabId ? handleOpenInBrowser : undefined}
+        externalBrowserUrl={tabId ? url : undefined}
         // Capture, annotation, and the more menu drive the desktop webview, so
         // server tabs leave them out. Floating works for both.
         onCapture={previewBridge && tabId && !isServerTab ? handleCapture : undefined}
