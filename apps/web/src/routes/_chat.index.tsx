@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,6 +18,9 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
+import { contentBearingNewThreadDraftId, soleOpenConversation } from "../sandboxConversationLaunch";
+import { useComposerDraftStore } from "../composerDraftStore";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -44,6 +47,10 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const navigate = useNavigate();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const contentDraftId = useComposerDraftStore(contentBearingNewThreadDraftId);
+  const sole = soleOpenConversation(threads, primaryEnvironmentId);
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -56,6 +63,17 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
+    if (!bootstrapped || primaryEnvironmentId === null || startingRef.current) return;
+    if (contentDraftId !== null) {
+      startingRef.current = true;
+      void navigate({ to: "/draft/$draftId", params: { draftId: contentDraftId }, replace: true });
+      return;
+    }
+    if (sole) {
+      startingRef.current = true;
+      void navigate({ to: "/$environmentId/$threadId", params: { environmentId: sole.environmentId, threadId: sole.id }, replace: true });
+      return;
+    }
     if (mostRecentProject === null || startingRef.current) {
       return;
     }
@@ -66,7 +84,7 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [bootstrapped, primaryEnvironmentId, sole, contentDraftId, navigate, handleNewThread, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
     return null;

@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -38,7 +39,11 @@ import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
-import { useProjects } from "../state/entities";
+import { useProjects, useThreadShells, useAllEnvironmentShellsBootstrapped } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { useComposerDraftStore } from "../composerDraftStore";
+import { hasNewThreadDraftContent } from "../sandboxConversationLaunch";
+import { useInitialConversationSidebar } from "../hooks/useInitialConversationSidebar";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -226,6 +231,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Seeds server-side visited tracking from this browser's localStorage the
   useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
+  const shells = useThreadShells();
+  const shellReady = useAllEnvironmentShellsBootstrapped();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const hasNewDraftContent = useComposerDraftStore(hasNewThreadDraftContent);
+  const initialSidebar = useInitialConversationSidebar({ pathname, shellReady,
+    environmentId: primaryEnvironmentId, shells, hasDraft: hasNewDraftContent });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
@@ -302,7 +313,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
-        defaultOpen
+        open={initialSidebar.open}
+        onOpenChange={initialSidebar.onOpenChange}
         style={sidebarProviderStyle}
       >
         <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
