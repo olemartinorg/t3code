@@ -54,6 +54,7 @@ const shellSnapshotWithSummaries: OrchestrationV2ShellSnapshot = {
       pendingRuntimeRequest: {
         id: RuntimeRequestId.make("runtime-request-v2"),
         kind: "command",
+        responseCapability: "live",
         createdAt: v2Now,
       },
       latestVisibleMessage: {

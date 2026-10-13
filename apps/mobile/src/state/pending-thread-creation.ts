@@ -165,6 +165,8 @@ export function pendingThreadCreationShell(
     activeRunId: null,
     status: "preparing",
     pendingRuntimeRequest: null,
+    pendingQuestions: [],
+    latestRunCompletedAt: null,
     latestVisibleMessage: null,
     latestUserMessageAt: timestamp,
     hasActionableProposedPlan: false,

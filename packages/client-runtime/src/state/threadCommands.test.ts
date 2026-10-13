@@ -32,11 +32,13 @@ const FUTURE = DateTime.makeUnsafe("2099-01-01T00:00:00.000Z");
 const APPROVAL = {
   id: RuntimeRequestId.make("approval"),
   kind: "command" as const,
+  responseCapability: "live" as const,
   createdAt: NOW,
 };
 const USER_INPUT = {
   id: RuntimeRequestId.make("input"),
   kind: "user_input" as const,
+  responseCapability: "live" as const,
   createdAt: NOW,
 };
 const SNAPSHOT: OrchestrationV2ShellSnapshot = {
@@ -64,6 +66,9 @@ const SNAPSHOT: OrchestrationV2ShellSnapshot = {
       activeRunId: null,
       status: "idle",
       pendingRuntimeRequest: null,
+      pendingQuestions: [],
+      latestRunCompletedAt: null,
+      lastVisitedAt: null,
       latestVisibleMessage: null,
       itemCount: 0,
       visibleItemCount: 0,

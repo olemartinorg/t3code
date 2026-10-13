@@ -44,6 +44,8 @@ export const v2ThreadShell: OrchestrationV2ThreadShell = {
   activeRunId: null,
   status: "idle",
   pendingRuntimeRequest: null,
+  pendingQuestions: [],
+  latestRunCompletedAt: null,
   latestVisibleMessage: null,
   latestUserMessageAt: null,
   hasActionableProposedPlan: false,

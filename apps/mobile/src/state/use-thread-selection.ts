@@ -18,6 +18,7 @@ import {
   deriveThreadRuntime,
 } from "@t3tools/client-runtime/state/thread-execution";
 import * as Option from "effect/Option";
+import * as DateTime from "effect/DateTime";
 
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { useProject, useThreadShell } from "../state/entities";
@@ -96,7 +97,35 @@ function threadDetailToShell(
     pendingRuntimeRequest:
       pendingRequest === null
         ? null
-        : { id: pendingRequest.id, kind: pendingRequest.kind, createdAt: pendingRequest.createdAt },
+        : {
+            id: pendingRequest.id,
+            kind: pendingRequest.kind,
+            createdAt: pendingRequest.createdAt,
+            responseCapability: pendingRequest.responseCapability.type,
+          },
+    pendingQuestions: projection.runtimeRequests
+      .filter(
+        (request) =>
+          request.kind === "user_input" &&
+          request.status === "pending" &&
+          projection.turnItems.some(
+            (item) => item.type === "user_input_request" && item.requestId === request.id,
+          ),
+      )
+      .map((request) => ({
+        id: request.id,
+        createdAt: request.createdAt,
+        responseCapability: request.responseCapability.type,
+      }))
+      .toSorted(
+        (left, right) =>
+          DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) ||
+          String(left.id).localeCompare(String(right.id)),
+      ),
+    latestRunCompletedAt: latestRun?.completedAt
+      ? DateTime.makeUnsafe(latestRun.completedAt)
+      : null,
+    lastVisitedAt: thread.lastVisitedAt ?? null,
     latestVisibleMessage: null,
     latestUserMessageAt: latestUserMessageAt(projection),
     hasActionableProposedPlan: false,
