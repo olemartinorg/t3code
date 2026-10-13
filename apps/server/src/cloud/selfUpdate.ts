@@ -18,7 +18,7 @@ export function resolveServerSelfUpdateCapability(input: {
   readonly desktopManaged: boolean;
   readonly launcherManaged: boolean;
 }): ServerSelfUpdateCapability | null {
-  // This vendor runtime is replaced only by Sandbox image upgrades.
+  // This fork runs only the explicitly selected build, in guests and host services.
   return null;
 }
 
@@ -147,7 +147,7 @@ export const withRunningThreadContinuation = Effect.fn(
 });
 
 export const make = () => Effect.succeed(ServerSelfUpdate.of({
-  update: () => Effect.fail(new ServerSelfUpdateError({ reason: "This T3 runtime is managed by Sandbox. Upgrade the task image to update it." })),
+  update: () => Effect.fail(new ServerSelfUpdateError({ reason: "This pinned T3 runtime is managed by Sandbox and cannot update itself." })),
   commitDesktopUpdate: () => Effect.fail(new ServerSelfUpdateError({ reason: "This T3 runtime is managed by Sandbox." })),
 }));
 
