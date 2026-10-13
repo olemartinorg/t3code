@@ -70,6 +70,31 @@ const fixedHandle = (database: IDBDatabase) => ({
 });
 
 describe("ConnectionStorage.makeCatalogBackend", () => {
+  it.effect("embedded clients leave native profiles unread and refuse a second profile owner", () =>
+    Effect.gen(function* () {
+      const getConnectionCatalog = vi
+        .fn()
+        .mockRejectedValue(new Error("must not read native credentials"));
+      const setConnectionCatalog = vi.fn();
+      vi.stubGlobal("window", {
+        sandboxT3: { version: 1, getVisible: () => true, onVisibility: () => () => {} },
+        desktopBridge: { getConnectionCatalog, setConnectionCatalog },
+      });
+      const database = {
+        transaction: vi.fn(() => {
+          throw new Error("must not read browser profiles");
+        }),
+      } as unknown as IDBDatabase;
+      const backend = ConnectionStorage.makeCatalogBackend(fixedHandle(database));
+      expect(yield* backend.read).toBeNull();
+      const error = yield* Effect.flip(backend.write(JSON.stringify(emptyCatalog)));
+      expect(error.message).toContain("Connections are managed by Workbench");
+      expect(getConnectionCatalog).not.toHaveBeenCalled();
+      expect(setConnectionCatalog).not.toHaveBeenCalled();
+      expect(database.transaction).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect("reports a closed IndexedDB connection as a typed read and write failure", () =>
     Effect.gen(function* () {
       vi.stubGlobal("window", {});
