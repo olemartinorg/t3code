@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 
 export interface SandboxEmbedding {
   readonly version: 1;
+  readonly getEnvironmentId?: () => string;
+  readonly saveModelDefault?: (environmentId: string, value: import("@t3tools/contracts").ModelSelection | null) => Promise<{ saved: boolean }>;
   readonly reportPanelPresence?: (present: boolean) => void;
   readonly getComposer?: () => unknown;
   readonly getClientSettings?: () => Record<string, unknown>;

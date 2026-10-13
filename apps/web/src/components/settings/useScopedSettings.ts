@@ -12,6 +12,7 @@ import {
   type ProjectScopedServerSettingKey,
   type ServerSettings,
   type UnifiedSettings,
+  type ModelSelection,
 } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
@@ -63,7 +64,7 @@ export function useScopedSettingSource(keys: readonly (keyof ServerSettings)[]) 
 function useRunScopedPlan() {
   const persistServer = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   return useCallback(
-    (plan: ReturnType<typeof planScopedSettingsPatch>) => {
+    (plan: ReturnType<typeof planScopedSettingsPatch>, modelDefault?: ModelSelection | null) => {
       if (plan.unavailableReason) {
         toastManager.add({
           type: "warning",
@@ -72,7 +73,7 @@ function useRunScopedPlan() {
         });
         return;
       }
-      void persistScopedSettingsPatch(
+      return persistScopedSettingsPatch(
         plan,
         async (request) => {
           const missing = requiredScopesForServerSettingsPatch(request.input.patch).find(
@@ -90,7 +91,22 @@ function useRunScopedPlan() {
           return persistServer(request);
         },
         persistClientSettingsPatch,
-      ).then(({ failedEnvironments, savedEnvironmentCount }) => {
+      ).then(async ({ failedEnvironments, savedEnvironmentCount }) => {
+        const bridge = window.sandboxT3;
+        if (modelDefault !== undefined && bridge?.saveModelDefault) {
+          try {
+          const localEnvironment = bridge.getEnvironmentId?.();
+          if (localEnvironment &&
+          plan.serverWrites.some(write => write.environmentId === localEnvironment) &&
+          !failedEnvironments.some(write => write.environmentId === localEnvironment)) {
+          await bridge.saveModelDefault(localEnvironment, modelDefault);
+          toastManager.add({ type: "success", title: "Default saved for future tasks" });
+          }
+          } catch {
+            toastManager.add({ type: "error", title: "Task default saved; future-task default not saved",
+              description: "The current task keeps its setting. Retry the explicit default-model setting to save it for future tasks." });
+          }
+        }
         if (failedEnvironments.length === 0) return;
         toastManager.add({
           type: "error",
@@ -108,7 +124,7 @@ export function useUpdateScopedSettings() {
   const { scope, environments } = useSettingsScope();
   const run = useRunScopedPlan();
   return useCallback(
-    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch)),
+    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch), patch.defaultModelSelection),
     [environments, run, scope],
   );
 }
@@ -124,7 +140,7 @@ export function useClearScopedSettings() {
   return useCallback(
     (keys: readonly ProjectScopedServerSettingKey[]) => {
       if (context === null) return;
-      run(planScopedSettingsClear(context.scope, context.environments, keys));
+      run(planScopedSettingsClear(context.scope, context.environments, keys), keys.includes("defaultModelSelection") ? null : undefined);
     },
     [context, run],
   );
@@ -137,7 +153,7 @@ export function useClearProjectOverrides() {
   return useCallback(
     (entries: readonly ProjectOverrideEntry[], keys: readonly ProjectScopedServerSettingKey[]) => {
       if (context === null) return;
-      run(planProjectOverridesClear(context.environments, entries, keys));
+      run(planProjectOverridesClear(context.environments, entries, keys), keys.includes("defaultModelSelection") ? null : undefined);
     },
     [context, run],
   );
