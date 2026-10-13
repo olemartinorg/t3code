@@ -1617,8 +1617,49 @@ it.layer(layerLegacyImportTest)("OrchestrationV2 legacy import", (it) => {
           )
       `;
 
+      // This completion is real V1 history. Import must carry its unread basis without
+      // inventing a V2 run or starting the old provider request again.
+      yield* sql`INSERT INTO projection_turns (
+        thread_id, turn_id, state, requested_at, completed_at, checkpoint_files_json
+      ) VALUES (
+        ${metadataThreadId}, 'turn:legacy:completed', 'completed',
+        '2026-01-02T00:00:00.000Z', '2026-01-02T01:00:00.000Z', '[]'
+      )`;
       yield* importer.reconcileShells;
       assert.isTrue((yield* maintenance.verify).valid);
+      const importedShell = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (thread) => thread.id === metadataThreadId,
+      )!;
+      assert.equal(DateTime.formatIso(importedShell.lastCompletionAt!), "2026-01-02T01:00:00.000Z");
+      assert.isNull(importedShell.latestRunId);
+      const activityAt = importedShell.updatedAt;
+      yield* threadManagement.dispatch({
+        type: "thread.visit",
+        commandId: CommandId.make("legacy-native-visit"),
+        threadId: metadataThreadId,
+        visitedAt: "2026-01-05T00:00:00.000Z",
+      });
+      yield* threadManagement.dispatch({
+        type: "thread.mark-unread",
+        commandId: CommandId.make("legacy-native-mark-unread"),
+        threadId: metadataThreadId,
+      });
+      const unreadShell = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (thread) => thread.id === metadataThreadId,
+      )!;
+      assert.equal(DateTime.formatIso(unreadShell.lastVisitedAt!), "2026-01-02T00:59:59.999Z");
+      assert.deepEqual(unreadShell.updatedAt, activityAt);
+      const [importStatus] = yield* sql<{ transcript_imported_at: string | null }>`
+        SELECT transcript_imported_at FROM orchestration_v2_legacy_imports
+        WHERE thread_id = ${metadataThreadId}
+      `;
+      assert.isNull(importStatus!.transcript_imported_at);
+      // Repeating the import preserves an explicit native mark-unread.
+      yield* importer.reconcileShells;
+      assert.deepEqual(
+        (yield* orchestrator.getShellSnapshot()).threads.find((thread) => thread.id === metadataThreadId)!.lastVisitedAt,
+        unreadShell.lastVisitedAt,
+      );
 
       yield* threadManagement.dispatch({
         type: "thread.metadata.update",

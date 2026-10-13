@@ -4751,4 +4751,30 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       );
     }),
   );
+  it.effect("persists a monotonic completion watermark in both shell projection paths", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* addRolledBackRecoveryCandidate("completion-watermark");
+      const first = yield* store.getThreadProjection(threadId);
+      const run = first.runs[0]!;
+      assert.deepEqual(first.thread.lastCompletionAt, run.completedAt);
+      const later = DateTime.add(run.completedAt!, { seconds: 1 });
+      const event = {
+        id: EventId.make("event:completion-watermark:later"),
+        type: "run.updated" as const, threadId, occurredAt: later,
+        payload: { ...run, status: "completed" as const, completedAt: later },
+      };
+      const replayed = ProjectionStore.applyToProjection(first, event);
+      yield* store.apply(event);
+      assert.deepEqual(replayed.thread.lastCompletionAt, later);
+      assert.deepEqual((yield* store.getThreadProjection(threadId)).thread.lastCompletionAt, later);
+      assert.deepEqual((yield* store.getThreadShell(threadId))!.lastCompletionAt, later);
+      yield* store.apply({ ...event,
+        id: EventId.make("event:completion-watermark:stale"),
+        payload: run,
+      });
+      assert.deepEqual((yield* store.getThreadShell(threadId))!.lastCompletionAt, later);
+    }),
+  );
+
 });
