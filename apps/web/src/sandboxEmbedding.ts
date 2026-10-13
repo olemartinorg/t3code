@@ -2,13 +2,24 @@ import { useSyncExternalStore } from "react";
 
 export interface SandboxEmbedding {
   readonly version: 1;
+  readonly targetKind?: "managed-task" | "external-t3";
+  readonly openConnections?: () => void;
   readonly getEnvironmentId?: () => string;
-  readonly saveModelDefault?: (environmentId: string, value: import("@t3tools/contracts").ModelSelection | null) => Promise<{ saved: boolean }>;
+  readonly saveModelDefault?: (
+    environmentId: string,
+    value: import("@t3tools/contracts").ModelSelection | null,
+  ) => Promise<{ saved: boolean }>;
   readonly reportPanelPresence?: (present: boolean) => void;
   readonly getComposer?: () => unknown;
   readonly getClientSettings?: () => Record<string, unknown>;
-  readonly saveComposer?: (expected: unknown, value: unknown) => Promise<{ saved?: boolean; conflict?: boolean; current?: unknown }>;
-  readonly saveClientSettings?: (expected: unknown, value: unknown) => Promise<{ saved?: boolean; conflict?: boolean; current?: unknown }>;
+  readonly saveComposer?: (
+    expected: unknown,
+    value: unknown,
+  ) => Promise<{ saved?: boolean; conflict?: boolean; current?: unknown }>;
+  readonly saveClientSettings?: (
+    expected: unknown,
+    value: unknown,
+  ) => Promise<{ saved?: boolean; conflict?: boolean; current?: unknown }>;
   readonly onState?: (listener: () => void) => () => void;
   readonly getVisible: () => boolean;
   readonly onVisibility: (listener: () => void) => () => void;
