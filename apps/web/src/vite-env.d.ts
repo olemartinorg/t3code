@@ -23,5 +23,6 @@ interface ImportMeta {
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
+    sandboxT3?: import("./sandboxEmbedding").SandboxEmbedding;
   }
 }

@@ -1,5 +1,6 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect } from "react";
+import { isSandboxEmbedded } from "../sandboxEmbedding";
 
 import { useThreadShells } from "../state/entities";
 import { threadEnvironment } from "../state/threads";
@@ -23,6 +24,8 @@ export function useThreadVisitedMigration(): void {
   const threads = useThreadShells();
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   useEffect(() => {
+    // Installed Sandbox visits are migrated by the service under exclusive ownership.
+    if (isSandboxEmbedded()) return;
     for (const thread of threads) {
       // Field absent → the environment's server has no visited tracking; keep
       // the local value in play and reconsider if the server upgrades.
