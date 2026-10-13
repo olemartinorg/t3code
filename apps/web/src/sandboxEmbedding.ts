@@ -2,8 +2,10 @@ import { useSyncExternalStore } from "react";
 
 export interface SandboxEmbedding {
   readonly version: 1;
-  readonly targetKind?: "managed-task" | "external-t3";
+  readonly getTargetKind?: () => "managed-task" | "external-t3";
   readonly openConnections?: () => void;
+  readonly getProjectId?: () => string | null;
+  readonly getOpenIntent?: () => "open" | "new-conversation" | "settings";
   readonly getEnvironmentId?: () => string;
   readonly saveModelDefault?: (
     environmentId: string,

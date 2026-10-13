@@ -95,7 +95,7 @@ function useRunScopedPlan() {
         const bridge = window.sandboxT3;
         if (
           modelDefault !== undefined &&
-          bridge?.targetKind === "managed-task" &&
+          bridge?.getTargetKind?.() === "managed-task" &&
           bridge.saveModelDefault
         ) {
           try {
@@ -105,7 +105,8 @@ function useRunScopedPlan() {
               plan.serverWrites.some((write) => write.environmentId === localEnvironment) &&
               !failedEnvironments.some((write) => write.environmentId === localEnvironment)
             ) {
-              await bridge.saveModelDefault(localEnvironment, modelDefault);
+              const result = await bridge.saveModelDefault(localEnvironment, modelDefault);
+              if (!result.saved) throw new Error("Future task model default was not saved");
               toastManager.add({ type: "success", title: "Default saved for future tasks" });
             }
           } catch {
