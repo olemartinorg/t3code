@@ -2391,6 +2391,12 @@ export default function ChatView(props: ChatViewProps) {
     ),
   );
 
+  const sandboxPanelPresent = rightPanelPresent || Boolean(activeThread && threadPanelOpen);
+  useEffect(() => {
+    window.sandboxT3?.reportPanelPresence?.(sandboxPanelPresent);
+    return () => window.sandboxT3?.reportPanelPresence?.(false);
+  }, [sandboxPanelPresent]);
+
   useEffect(() => {
     if (!activeThreadRef || !previewSessionsReady) return;
     const hiddenTabIds = new Set(

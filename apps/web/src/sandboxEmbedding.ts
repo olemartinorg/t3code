@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 
 export interface SandboxEmbedding {
   readonly version: 1;
+  readonly reportPanelPresence?: (present: boolean) => void;
   readonly getComposer?: () => unknown;
   readonly getClientSettings?: () => Record<string, unknown>;
   readonly saveComposer?: (expected: unknown, value: unknown) => Promise<{ saved?: boolean; conflict?: boolean; current?: unknown }>;
