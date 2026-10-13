@@ -2122,7 +2122,7 @@ it.effect("default-off project overrides and explicit opt-in survive unrelated w
   Effect.gen(function* () {
     const service = yield* ServerSettingsModule.ServerSettingsService;
     yield* service.updateSettings({ sidebarAutoSettleAfterDays: 7, sidebarAutoSettleOnMerge: true,
-      projectSettingsOverrides: { "fixture-project": { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false } } });
+      projectSettingsOverrides: { [ProjectId.make("fixture-project")]: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false } } });
     yield* service.updateSettings({ responseStreamingMode: "turn" });
     const reloaded = yield* Effect.gen(function* () {
       const settings = yield* ServerSettingsModule.ServerSettingsService;
@@ -2130,7 +2130,7 @@ it.effect("default-off project overrides and explicit opt-in survive unrelated w
     }).pipe(Effect.provide(Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer))));
     assert.strictEqual(reloaded.sidebarAutoSettleAfterDays, 7);
     assert.isTrue(reloaded.sidebarAutoSettleOnMerge);
-    assert.deepEqual(reloaded.projectSettingsOverrides["fixture-project"], { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false });
+    assert.deepEqual(reloaded.projectSettingsOverrides[ProjectId.make("fixture-project")], { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false });
   }).pipe(Effect.provide(layerServerSettings())),
 );
 
