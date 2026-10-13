@@ -168,3 +168,18 @@ test("managed task root launch retains its native environment-wide selection", a
   });
   expect(state.newThread).not.toHaveBeenCalled();
 });
+
+test("No project Settings opens the native environment scope", async () => {
+  window.sandboxT3 = {
+    ...window.sandboxT3!,
+    getProjectId: () => null,
+    getOpenIntent: () => "settings",
+  };
+  await open();
+  expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+    to: "/settings/general",
+    search: { machine: "chosen-env" },
+    replace: true,
+  });
+  expect(state.newThread).not.toHaveBeenCalled();
+});
