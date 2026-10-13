@@ -635,6 +635,19 @@ function isQueuedProviderThreadPlaceholder(providerThread: OrchestrationV2Provid
   );
 }
 
+function completionWatermark(
+  thread: OrchestrationV2AppThread,
+  event: OrchestrationV2DomainEvent,
+): DateTime.Utc | null {
+  const previous = thread.lastCompletionAt ?? null;
+  const completedAt =
+    event.type === "run.created" || event.type === "run.updated" ? event.payload.completedAt : null;
+  if (completedAt === null) return previous;
+  return previous === null || DateTime.toEpochMillis(completedAt) > DateTime.toEpochMillis(previous)
+    ? completedAt
+    : previous;
+}
+
 export function applyToProjection(
   projection: OrchestrationV2ThreadProjection,
   event: OrchestrationV2DomainEvent,
@@ -643,6 +656,7 @@ export function applyToProjection(
     ...projection,
     thread: {
       ...projection.thread,
+      lastCompletionAt: completionWatermark(projection.thread, event),
       updatedAt: event.occurredAt,
     },
     updatedAt: event.occurredAt,
@@ -1469,6 +1483,7 @@ export function threadShellFromProjection(
 
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: projection.thread.pinOrderKey ?? null,
+    lastCompletionAt: projection.thread.lastCompletionAt ?? null,
     lastVisitedAt: projection.thread.lastVisitedAt,
     titleRegeneration: projection.thread.titleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
@@ -1724,6 +1739,7 @@ function shellFromState(input: {
 
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
     pinOrderKey: input.state.thread.pinOrderKey ?? null,
+    lastCompletionAt: input.state.thread.lastCompletionAt ?? null,
     lastVisitedAt: input.state.thread.lastVisitedAt,
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
@@ -2614,7 +2630,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           const row = rows[0];
           if (row !== undefined) {
             const thread = yield* decodeThreadPayload(row.payload_json);
-            const updatedThread = { ...thread, updatedAt: event.occurredAt };
+            const updatedThread = {
+              ...thread,
+              lastCompletionAt: completionWatermark(thread, event),
+              updatedAt: event.occurredAt,
+            };
             const payloadJson = yield* encodeThreadPayload(updatedThread);
             yield* sql`
               UPDATE orchestration_v2_projection_threads

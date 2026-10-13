@@ -140,6 +140,7 @@ export interface EnvironmentThreadShell {
    * server predates visited tracking and clients should fall back to any
    * local visited state they keep.
    */
+  readonly lastCompletionAt?: string | null;
   readonly lastVisitedAt?: string | null;
   /** Pending title regeneration marker; null when no request is in flight. */
   readonly titleRegeneration?: { readonly requestId: string; readonly startedAt: string } | null;
@@ -276,6 +277,7 @@ export function presentThreadShell(
     autoSettleDisabledAt: nullableIso(thread.autoSettleDisabledAt ?? null),
     pinOrderKey: thread.pinOrderKey ?? null,
     activeOrderKey: thread.activeOrderKey ?? null,
+    lastCompletionAt: nullableIso(thread.lastCompletionAt ?? null),
     ...(thread.lastVisitedAt === undefined
       ? {}
       : { lastVisitedAt: nullableIso(thread.lastVisitedAt) }),

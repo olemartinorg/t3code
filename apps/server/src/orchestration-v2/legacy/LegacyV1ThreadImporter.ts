@@ -61,6 +61,7 @@ interface LegacyThreadRow {
   readonly branch_pull_request_json: string | null;
   readonly active_order_key: string | null;
   readonly deleted_at: string | null;
+  readonly last_completion_at: string | null;
 }
 
 interface LegacyRepairRow extends LegacyThreadRow {
@@ -237,6 +238,7 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
     pinnedAt: nullableDateTime(row.pinned_at),
     autoSettleDisabledAt: nullableDateTime(row.auto_settle_disabled_at),
     pinOrderKey: row.pin_order_key?.trim() || null,
+    lastCompletionAt: row.last_completion_at === null ? null : dateTime(row.last_completion_at),
     lastVisitedAt: null,
     deletedAt: nullableDateTime(row.deleted_at),
   };
@@ -468,6 +470,7 @@ const make = Effect.gen(function* () {
         thread.branch_pull_request_json,
         thread.active_order_key,
         thread.deleted_at,
+        (SELECT MAX(completed_at) FROM projection_turns WHERE thread_id = thread.thread_id) AS last_completion_at,
         projection.payload_json
       FROM orchestration_v2_legacy_imports AS legacy_import
       INNER JOIN projection_threads AS thread
@@ -483,6 +486,7 @@ const make = Effect.gen(function* () {
          OR json_type(projection.payload_json, '$.pullRequests') IS NULL
          OR json_type(projection.payload_json, '$.branchPullRequest') IS NULL
          OR json_type(projection.payload_json, '$.activeOrderKey') IS NULL
+         OR json_type(projection.payload_json, '$.lastCompletionAt') IS NULL
       ORDER BY thread.created_at ASC, thread.thread_id ASC
     `;
     let repairedThreadCount = 0;
@@ -494,6 +498,7 @@ const make = Effect.gen(function* () {
       const legacyPullRequests = legacy.pullRequests ?? [];
       const repaired: OrchestrationV2AppThread = {
         ...current,
+        lastCompletionAt: current.lastCompletionAt === undefined ? legacy.lastCompletionAt : current.lastCompletionAt,
         pinnedAt: current.pinnedAt === undefined ? legacy.pinnedAt : current.pinnedAt,
         autoSettleDisabledAt:
           current.autoSettleDisabledAt === undefined
@@ -571,7 +576,8 @@ const make = Effect.gen(function* () {
         thread.linked_pull_request_json,
         thread.branch_pull_request_json,
         thread.active_order_key,
-        thread.deleted_at
+        thread.deleted_at,
+        (SELECT MAX(completed_at) FROM projection_turns WHERE thread_id = thread.thread_id) AS last_completion_at
       FROM projection_threads AS thread
       WHERE NOT EXISTS (
         SELECT 1

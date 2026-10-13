@@ -656,6 +656,7 @@ type ThreadStatusInput = Pick<
   | "latestRun"
   | "runtime"
 > & {
+  lastCompletionAt?: string | null | undefined;
   lastVisitedAt?: string | null | undefined;
   pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
 };
@@ -771,10 +772,10 @@ export function resolveThreadLastVisitedAt(
 }
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
-  if (!thread.latestRun?.completedAt) return false;
-  const completedAt = Date.parse(thread.latestRun.completedAt);
+  if (!thread.lastCompletionAt) return false;
+  const completedAt = Date.parse(thread.lastCompletionAt);
   if (Number.isNaN(completedAt)) return false;
-  if (!thread.lastVisitedAt) return false;
+  if (!thread.lastVisitedAt) return true;
 
   const lastVisitedAt = Date.parse(thread.lastVisitedAt);
   if (Number.isNaN(lastVisitedAt)) return true;

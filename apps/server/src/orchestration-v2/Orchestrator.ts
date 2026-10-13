@@ -2736,16 +2736,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     let markUnreadVisitedAt: DateTime.Utc | null = null;
     if (command.type === "thread.mark-unread") {
-      const projection = yield* loadProjectionForCommand(command, ["runs"]);
-      const latestRunCompletedAt = projection.runs.at(-1)?.completedAt ?? null;
-      if (latestRunCompletedAt === null) {
+      const completedAt = thread.lastCompletionAt ?? null;
+      if (completedAt === null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Thread ${command.threadId} has no completed run to mark unread.`,
+          cause: `Thread ${command.threadId} has no completion to mark unread.`,
         });
       }
-      markUnreadVisitedAt = DateTime.subtract(latestRunCompletedAt, { milliseconds: 1 });
+      markUnreadVisitedAt = DateTime.subtract(completedAt, { milliseconds: 1 });
     }
     const updatedThread: OrchestrationV2AppThread = (() => {
       switch (command.type) {
