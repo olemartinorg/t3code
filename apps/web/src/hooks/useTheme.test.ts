@@ -258,3 +258,19 @@ describe("native task appearance", () => {
     expect(removeNative).toHaveBeenCalledOnce();
   });
 });
+
+
+describe("Sandbox fresh appearance", () => {
+  it("defaults to dark on a light desktop and preserves saved light or system choices", async () => {
+    const localStorage = createStorage();
+    vi.stubGlobal("window", { localStorage, matchMedia: () => ({ matches: false }) });
+    const { readThemePreference, readAppearanceModePreference } = await import("./useTheme");
+    expect(readThemePreference()).toBe("dark");
+    expect(readAppearanceModePreference(readThemePreference())).toBe("dark");
+    for (const choice of ["light", "system"]) {
+      localStorage.setItem("t3code:theme", choice);
+      expect(readThemePreference()).toBe(choice);
+      expect(readAppearanceModePreference(readThemePreference())).toBe(choice);
+    }
+  });
+});
