@@ -85,6 +85,15 @@ function IndexDraftLanding() {
   useEffect(() => {
     if (!bootstrapped || primaryEnvironmentId === null || startingRef.current) return;
     if (openIntent === "settings") {
+      if (selectedProjectId === null) {
+        startingRef.current = true;
+        void navigate({
+          to: "/settings/general",
+          search: { machine: primaryEnvironmentId },
+          replace: true,
+        });
+        return;
+      }
       const group = projectGroups.find((group) =>
         group.memberProjects.some(
           (member) =>
