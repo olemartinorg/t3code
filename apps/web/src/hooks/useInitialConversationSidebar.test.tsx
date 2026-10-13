@@ -10,28 +10,28 @@ const thread = { id: "one", environmentId, archivedAt: null, settledOverride: nu
 const ready = { pathname: "/", shellReady: true, environmentId, shells: [thread], hasDraft: false };
 let renderer: ReactTestRenderer | null = null;
 let sidebar: ReturnType<typeof useInitialConversationSidebar>;
-function Layout(props: Parameters<typeof useInitialConversationSidebar>[0]) { sidebar = useInitialConversationSidebar(props); return <div data-open={sidebar.open} />; }
+function Layout(props: Parameters<typeof useInitialConversationSidebar>[0]) { sidebar = useInitialConversationSidebar(props); return null; }
 async function render(props = ready) { await act(async () => { if (renderer) renderer.update(<Layout {...props} />); else renderer = create(<Layout {...props} />); }); }
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
-afterEach(async () => { await act(async () => renderer?.unmount());renderer=null;vi.unstubAllGlobals(); });
-test("waits for both native shell and environment identity before closing once", async () => {
-  await render({ ...ready, shellReady: false, environmentId: null } as never);expect(sidebar.open).toBe(true);
-  await render({ ...ready, environmentId: null } as never);expect(sidebar.open).toBe(true);
-  await render();expect(sidebar.open).toBe(false);
-  await act(async () => sidebar.onOpenChange(true));
-  await render({ ...ready, shells: [{ ...thread, updatedAt: "later" } as never] });expect(sidebar.open).toBe(true);
+beforeEach(() => { window.localStorage.clear(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); });
+afterEach(async () => { await act(async () => renderer?.unmount()); renderer = null; vi.unstubAllGlobals(); });
+test("begins closed while native identity and count load", async () => {
+  await render({ ...ready, shellReady: false, environmentId: null } as never); expect(sidebar.open).toBe(false);
+  await render(); expect(sidebar.open).toBe(false);
 });
-test("a manual toggle during loading owns the sidebar thereafter", async () => {
+test.each(["/", "/draft/new", "/settings", `/${environmentId}/one`])("zero/one conversation stays closed on %s including retained drafts", async pathname => {
+  await render({ ...ready, pathname, hasDraft: true, shells: [] }); expect(sidebar.open).toBe(false);
+  await render({ ...ready, pathname, hasDraft: true }); expect(sidebar.open).toBe(false);
+});
+test("count defaults update without persisting automatic choices", async () => {
+  await render({ ...ready, shells: [thread, { ...thread, id: "two" } as never] }); expect(sidebar.open).toBe(true);
+  expect(window.localStorage.getItem("sandbox:t3-sidebar-manual:v1")).toBeNull();
+  await render({ ...ready, shells: [thread, { ...thread, id: "two", settledOverride: "settled" } as never] }); expect(sidebar.open).toBe(false);
+  await render({ ...ready, shells: [thread, { ...thread, id: "two", archivedAt: "now" } as never] }); expect(sidebar.open).toBe(false);
+});
+test.each([false, true])("manual %s survives count/route changes and reopen", async open => {
   await render({ ...ready, shellReady: false });
-  await act(async () => { sidebar.onOpenChange(false);sidebar.onOpenChange(true); });
-  await render();expect(sidebar.open).toBe(true);
-});
-test("a changed explicit route during loading is not overridden by the sole launch", async () => {
-  await render({ ...ready, shellReady: false });
-  await render({ ...ready, pathname: `/${environmentId}/other` });expect(sidebar.open).toBe(true);
-});
-test.each(["/draft/new", "/settings", `/${environmentId}/other`])("preserves explicit %s launch", async pathname => { await render({ ...ready, pathname });expect(sidebar.open).toBe(true); });
-test("retains content-bearing drafts and zero/multiple-conversation launches", async () => {
-  await render({ ...ready, hasDraft: true });expect(sidebar.open).toBe(true);
-  await render();expect(sidebar.open).toBe(true);
+  await act(async () => sidebar.onOpenChange(open));
+  await render({ ...ready, pathname: "/draft/new", shells: [thread, { ...thread, id: "two" } as never] }); expect(sidebar.open).toBe(open);
+  await act(async () => renderer?.unmount()); renderer = null;
+  await render(); expect(sidebar.open).toBe(open);
 });

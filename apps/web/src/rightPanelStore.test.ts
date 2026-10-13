@@ -536,16 +536,32 @@ describe("rightPanelStore", () => {
     ).toEqual({
       byThreadKey: {},
       threadPanelVisibilityByThreadKey: {
-        "env-1:thread-A": { inlineOpen: false, popoverOpen: false },
+        "env-1:thread-A": { inlineOpen: false, popoverOpen: false, manualChoice: true },
       },
     });
+  });
+
+  it("preserves new explicit open and closed choices while ignoring old implicit open", () => {
+    expect(migratePersistedRightPanelState({ threadPanelVisibilityByThreadKey: {
+      "env-1:thread-A": { inlineOpen: true, popoverOpen: false, manualChoice: true },
+      "env-1:thread-B": { inlineOpen: true, popoverOpen: false },
+    } }).threadPanelVisibilityByThreadKey).toEqual({
+      "env-1:thread-A": { inlineOpen: true, popoverOpen: false, manualChoice: true },
+    });
+    const store = useRightPanelStore.getState();
+    store.toggleThreadPanel(refA, "inline");
+    expect(selectThreadPanelOpen(useRightPanelStore.getState().threadPanelVisibilityByThreadKey, refA, "inline")).toBe(true);
+    store.open(refA, "diff"); store.close(refA);
+    expect(selectThreadPanelOpen(useRightPanelStore.getState().threadPanelVisibilityByThreadKey, refA, "inline")).toBe(true);
+    store.toggleThreadPanel(refA, "inline");
+    expect(selectThreadPanelOpen(useRightPanelStore.getState().threadPanelVisibilityByThreadKey, refA, "inline")).toBe(false);
   });
 
   it("tracks inline and popover visibility independently", () => {
     const store = useRightPanelStore.getState();
 
     expect(selectThreadPanelOpen(store.threadPanelVisibilityByThreadKey, refA, "inline")).toBe(
-      true,
+      false,
     );
     expect(selectThreadPanelOpen(store.threadPanelVisibilityByThreadKey, refA, "popover")).toBe(
       false,
@@ -559,13 +575,13 @@ describe("rightPanelStore", () => {
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
       ),
-    ).toEqual({ inlineOpen: false, popoverOpen: true });
+    ).toEqual({ inlineOpen: false, popoverOpen: true, manualChoice: true });
     expect(
       selectThreadPanelVisibility(
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refB,
       ),
-    ).toEqual({ inlineOpen: true, popoverOpen: false });
+    ).toEqual({ inlineOpen: false, popoverOpen: false });
   });
 
   it("closes the popover atomically when the real right panel opens", () => {
@@ -577,10 +593,10 @@ describe("rightPanelStore", () => {
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
       ),
-    ).toEqual({ inlineOpen: true, popoverOpen: false });
+    ).toEqual({ inlineOpen: false, popoverOpen: false, manualChoice: true });
   });
 
-  it("keeps an open popover visible by promoting it to inline when the real panel closes", () => {
+  it("does not reopen inline summary when another panel closes", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "diff");
     store.setThreadPanelOpen(refA, "inline", false);
@@ -592,7 +608,7 @@ describe("rightPanelStore", () => {
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
       ),
-    ).toEqual({ inlineOpen: true, popoverOpen: true });
+    ).toEqual({ inlineOpen: false, popoverOpen: true, manualChoice: true });
   });
 
   it("open sets the active panel for a thread", () => {
