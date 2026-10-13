@@ -62,11 +62,11 @@ afterEach(async () => {
   delete window.sandboxT3;
 });
 
-async function save(targetKind: "managed-task" | "external-t3" | undefined) {
-  const saveModelDefault = vi.fn().mockResolvedValue({ saved: true });
+async function save(targetKind: "managed-task" | "external-t3" | undefined, saved = true) {
+  const saveModelDefault = vi.fn().mockResolvedValue({ saved });
   window.sandboxT3 = {
     version: 1,
-    targetKind,
+    ...(targetKind === undefined ? {} : { getTargetKind: () => targetKind }),
     getVisible: () => true,
     onVisibility: () => () => {},
     getEnvironmentId: () => environmentId,
@@ -100,4 +100,38 @@ test("a failed native managed task save cannot change the future template", asyn
   const template = await save("managed-task");
   expect(template).not.toHaveBeenCalled();
   expect(state.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Setting not saved" }));
+});
+
+test("a declined future-template write does not report a saved default", async () => {
+  const template = await save("managed-task", false);
+  expect(template).toHaveBeenCalledExactlyOnceWith(environmentId, null);
+  expect(state.toast).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      type: "error",
+      title: "Task default saved; future-task default not saved",
+    }),
+  );
+});
+
+test("future-template saving reads authenticated target ownership at save time", async () => {
+  const getTargetKind = vi
+    .fn<() => "managed-task" | "external-t3">()
+    .mockReturnValue("managed-task");
+  const saveModelDefault = vi.fn().mockResolvedValue({ saved: true });
+  window.sandboxT3 = {
+    version: 1,
+    getTargetKind,
+    getVisible: () => true,
+    onVisibility: () => () => {},
+    getEnvironmentId: () => environmentId,
+    saveModelDefault,
+  };
+  await act(async () => {
+    renderer = create(<SettingsReader />);
+  });
+  getTargetKind.mockReturnValue("external-t3");
+  await update({ defaultModelSelection: null });
+  expect(getTargetKind).toHaveBeenCalled();
+  expect(state.persistServer).toHaveBeenCalledOnce();
+  expect(saveModelDefault).not.toHaveBeenCalled();
 });
