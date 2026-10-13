@@ -105,7 +105,12 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void;
 }) {
   const isMobile = useIsMobile();
-  const [openMobile, setOpenMobile] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const openMobile = openProp ?? mobileOpen;
+  const setOpenMobile = React.useCallback((value: boolean | ((value: boolean) => boolean)) => {
+    const next = typeof value === "function" ? value(openMobile) : value;
+    if (setOpenProp) setOpenProp(next); else setMobileOpen(next);
+  }, [setOpenProp, openMobile]);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -134,7 +139,7 @@ function SidebarProvider({
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-  }, [isMobile, setOpen]);
+  }, [isMobile, setOpen, setOpenMobile]);
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.

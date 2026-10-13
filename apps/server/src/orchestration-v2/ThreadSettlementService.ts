@@ -169,6 +169,7 @@ export function resolveAutoSettlementAt(input: {
   readonly autoSettleAfterDays: number | null;
   readonly autoSettleOnMerge: boolean;
 }): DateTime.Utc | null {
+  if (input.autoSettleAfterDays === null && !input.autoSettleOnMerge) return null;
   const { thread } = input;
   let pullRequest = input.pullRequest;
   const links = visibleThreadPullRequests(thread.pullRequests ?? []);
