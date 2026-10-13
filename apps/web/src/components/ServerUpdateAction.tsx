@@ -19,6 +19,8 @@ import {
 import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
+import { isSandboxEmbedded } from "~/sandboxEmbedding";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
@@ -122,8 +124,10 @@ export function ServerUpdatesAction({
   const update = useServerUpdate();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const eligible = targets.filter(
     (target) =>
+      !(isSandboxEmbedded() && target.environmentId === primaryEnvironmentId) &&
       target.selfUpdate !== null &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
   );
@@ -221,6 +225,7 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
@@ -281,6 +286,10 @@ export function ServerUpdateAction({
       continueThreadsAfterServerUpdate,
     });
   };
+
+  if (isSandboxEmbedded() && environmentId === primaryEnvironmentId) {
+    return <span className="text-muted-foreground text-xs">Update this task image in Sandbox.</span>;
+  }
 
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
@@ -355,6 +364,7 @@ export function OutdatedServerUpdateAction({
   readonly targetVersion: string;
   readonly label?: string;
 }) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const update = useAtomCommand(updateOutdatedServer, { reportFailure: false });
   const handleUpdate = async () => {
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
@@ -384,6 +394,9 @@ export function OutdatedServerUpdateAction({
       pendingUpdateEnvironmentIds.delete(environmentId);
     }
   };
+  if (isSandboxEmbedded() && environmentId === primaryEnvironmentId) {
+    return <span className="text-muted-foreground text-xs">Update this task image in Sandbox.</span>;
+  }
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}
