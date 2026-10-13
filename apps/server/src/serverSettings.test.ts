@@ -584,8 +584,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.isFalse(next.sidebarAutoSettleOnMerge);
         assert.strictEqual(change?.sidebarAutoSettleAfterDays, null);
         assert.isFalse(change?.sidebarAutoSettleOnMerge);
-        assert.strictEqual(persisted.sidebarAutoSettleAfterDays, null);
-        assert.isFalse(persisted.sidebarAutoSettleOnMerge);
+        assert.notProperty(persisted, "sidebarAutoSettleAfterDays");
+        assert.notProperty(persisted, "sidebarAutoSettleOnMerge");
       }),
     ).pipe(Effect.provide(layerServerSettings())),
   );
@@ -2101,4 +2101,37 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), broken);
     }).pipe(Effect.provide(layerServerSettings())),
   );
+
+it.effect("default-off settlement survives sparse settings and unrelated writes", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const settings = yield* ServerSettingsModule.ServerSettingsService;
+    yield* fs.writeFileString(config.settingsPath, JSON.stringify({ responseStreamingMode: "paragraph" }));
+    const initial = yield* settings.getSettings;
+    assert.strictEqual(initial.sidebarAutoSettleAfterDays, null);
+    assert.isFalse(initial.sidebarAutoSettleOnMerge);
+    yield* settings.updateSettings({ responseStreamingMode: "turn" });
+    const raw = JSON.parse(yield* fs.readFileString(config.settingsPath));
+    assert.notProperty(raw, "sidebarAutoSettleAfterDays");
+    assert.notProperty(raw, "sidebarAutoSettleOnMerge");
+  }).pipe(Effect.provide(layerServerSettings())),
+);
+
+it.effect("default-off project overrides and explicit opt-in survive unrelated writes and native restart", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    yield* service.updateSettings({ sidebarAutoSettleAfterDays: 7, sidebarAutoSettleOnMerge: true,
+      projectSettingsOverrides: { "fixture-project": { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false } } });
+    yield* service.updateSettings({ responseStreamingMode: "turn" });
+    const reloaded = yield* Effect.gen(function* () {
+      const settings = yield* ServerSettingsModule.ServerSettingsService;
+      return yield* settings.getSettings;
+    }).pipe(Effect.provide(Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer))));
+    assert.strictEqual(reloaded.sidebarAutoSettleAfterDays, 7);
+    assert.isTrue(reloaded.sidebarAutoSettleOnMerge);
+    assert.deepEqual(reloaded.projectSettingsOverrides["fixture-project"], { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false });
+  }).pipe(Effect.provide(layerServerSettings())),
+);
+
 });
