@@ -1,3 +1,5 @@
+import { ProjectId } from "@t3tools/contracts";
+import { useSettingsProjectGroups } from "../components/settings/useSettingsProjectGroups";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -49,29 +51,75 @@ function IndexDraftLanding() {
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const contentDraftId = useComposerDraftStore(contentBearingNewThreadDraftId);
-  const sole = soleOpenConversation(threads, primaryEnvironmentId);
+  const projectGroups = useSettingsProjectGroups();
+  const externalTarget =
+    window.sandboxT3?.version === 1 && window.sandboxT3.getTargetKind?.() === "external-t3";
+  const projectIdValue = externalTarget ? (window.sandboxT3?.getProjectId?.() ?? null) : undefined;
+  const selectedProjectId =
+    projectIdValue == null ? projectIdValue : ProjectId.make(projectIdValue);
+  const openIntent = externalTarget ? (window.sandboxT3?.getOpenIntent?.() ?? "open") : "open";
+  const contentDraftId = useComposerDraftStore((state) =>
+    contentBearingNewThreadDraftId(
+      state,
+      externalTarget ? primaryEnvironmentId : undefined,
+      selectedProjectId,
+    ),
+  );
+  const sole = soleOpenConversation(threads, primaryEnvironmentId, selectedProjectId);
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const mostRecentProject = useMemo(
     () =>
       bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
+        ? externalTarget
+          ? (projects.find(
+              (project) =>
+                project.environmentId === primaryEnvironmentId && project.id === selectedProjectId,
+            ) ?? null)
+          : (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads],
+    [bootstrapped, projects, threads, externalTarget, primaryEnvironmentId, selectedProjectId],
   );
 
   useEffect(() => {
     if (!bootstrapped || primaryEnvironmentId === null || startingRef.current) return;
-    if (contentDraftId !== null) {
+    if (openIntent === "settings") {
+      const group = projectGroups.find((group) =>
+        group.memberProjects.some(
+          (member) =>
+            member.environmentId === primaryEnvironmentId && member.id === selectedProjectId,
+        ),
+      );
+      const member = group?.memberProjects.find(
+        (member) =>
+          member.environmentId === primaryEnvironmentId && member.id === selectedProjectId,
+      );
+      if (!group || !member) return;
+      startingRef.current = true;
+      void navigate({
+        to: "/settings/projects",
+        search: {
+          project: group.projectKey,
+          machine: primaryEnvironmentId,
+          checkout: member.physicalProjectKey,
+        },
+        replace: true,
+      });
+      return;
+    }
+    if (openIntent !== "new-conversation" && contentDraftId !== null) {
       startingRef.current = true;
       void navigate({ to: "/draft/$draftId", params: { draftId: contentDraftId }, replace: true });
       return;
     }
-    if (sole) {
+    if (openIntent !== "new-conversation" && sole) {
       startingRef.current = true;
-      void navigate({ to: "/$environmentId/$threadId", params: { environmentId: sole.environmentId, threadId: sole.id }, replace: true });
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: sole.environmentId, threadId: sole.id },
+        replace: true,
+      });
       return;
     }
     if (mostRecentProject === null || startingRef.current) {
@@ -84,7 +132,19 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [bootstrapped, primaryEnvironmentId, sole, contentDraftId, navigate, handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [
+    bootstrapped,
+    primaryEnvironmentId,
+    sole,
+    contentDraftId,
+    navigate,
+    handleNewThread,
+    mostRecentProject,
+    startState.retryRequest,
+    openIntent,
+    projectGroups,
+    selectedProjectId,
+  ]);
 
   if (!bootstrapped) {
     return null;
@@ -100,6 +160,24 @@ function IndexDraftLanding() {
         }}
       />
     ) : null;
+  }
+  if (externalTarget) {
+    return (
+      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+        <Empty className="flex-1">
+          <EmptyHeader>
+            <EmptyTitle>
+              {selectedProjectId === null ? "No project" : "Project unavailable"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {selectedProjectId === null
+                ? "Select an existing conversation in Workbench, or choose a project to start a new conversation."
+                : "The selected project is no longer available on this environment."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </SidebarInset>
+    );
   }
   // First-run routing to the welcome wizard happens in FirstRunGate at the
   // root, before this route ever renders.
