@@ -23,8 +23,12 @@ export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | nul
       return;
     }
     if (!serverThread?.id) return;
-    const threadUpdatedAt = Date.parse(serverThread.updatedAt);
+    // Imported V1 completions can be later than the thread metadata timestamp.
+    // Seeing that transcript must acknowledge its actual completion watermark.
+    const completedAt = serverThread.lastCompletionAt ? Date.parse(serverThread.lastCompletionAt) : NaN;
+    const threadUpdatedAt = Math.max(Date.parse(serverThread.updatedAt), Number.isNaN(completedAt) ? 0 : completedAt);
     if (Number.isNaN(threadUpdatedAt)) return;
+    const visitedAt = new Date(threadUpdatedAt).toISOString();
     const effectiveLastVisitedAt = resolveThreadLastVisitedAt(
       serverThread.lastVisitedAt,
       activeThreadLocalLastVisitedAt,
@@ -39,14 +43,14 @@ export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | nul
       // dedupe also keeps a mark-unread on the open thread sticky: the rewind
       // leaves updatedAt untouched, so the already-dispatched key skips a
       // fresh visit until new activity lands or the thread is reopened.
-      const dispatchKey = `${routeThreadKey}:${serverThread.updatedAt}`;
+      const dispatchKey = `${routeThreadKey}:${visitedAt}`;
       if (lastDispatchedVisitRef.current === dispatchKey) return;
       const dispatch = () => {
         lastDispatchedVisitRef.current = dispatchKey;
         lastVisitDispatchAtRef.current = Date.now();
         void visitThreadMutation({
           environmentId: serverThread.environmentId,
-          input: { threadId: serverThread.id, visitedAt: serverThread.updatedAt },
+          input: { threadId: serverThread.id, visitedAt },
         });
       };
       // Unread prominence only flips on run completions (hasUnseenCompletion),
@@ -71,7 +75,7 @@ export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | nul
 
     markThreadVisited(
       scopedThreadKey(scopeThreadRef(serverThread.environmentId, serverThread.id)),
-      serverThread.updatedAt,
+      visitedAt,
     );
   }, [
     activeThreadLocalLastVisitedAt,

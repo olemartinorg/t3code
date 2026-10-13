@@ -57,3 +57,9 @@ test("a new independent completion visits immediately rather than waiting for th
   await act(async () => renderer!.update(<Reader value={{ ...thread, updatedAt: "2026-10-07T12:00:01.000Z", lastCompletionAt: "2026-10-07T12:00:01.000Z" }} />));
   expect(state.visit).toHaveBeenCalledTimes(2);
 });
+
+test("an imported completion later than metadata is acknowledged when visible", async () => {
+  visible = true;
+  await act(async () => { renderer = create(<Reader value={{ ...thread, lastCompletionAt: "2026-10-07T12:00:09.000Z" }} />); });
+  expect(state.visit).toHaveBeenCalledExactlyOnceWith({ environmentId: "env", input: { threadId: "thread", visitedAt: "2026-10-07T12:00:09.000Z" } });
+});
