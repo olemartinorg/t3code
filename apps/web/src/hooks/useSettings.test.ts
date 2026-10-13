@@ -451,3 +451,16 @@ describe("onboarding completion persistence", () => {
     expect(persist).toHaveBeenLastCalledWith(completedSettings);
   });
 });
+
+
+it("hydrates task appearance and preserves unrelated settings through its persistence queue", async () => {
+  const saved = { ...DEFAULT_CLIENT_SETTINGS, themeAppearanceMode: "dark" as const, wordWrap: false };
+  persistenceMocks.getClientSettings.mockResolvedValue(saved);
+  await expect(persistClientSettingsUpdate(current => ({ ...current, themeAppearanceMode: "light" })))
+    .resolves.toEqual({ ...saved, themeAppearanceMode: "light" });
+  await expect(persistClientSettingsUpdate(current => ({ ...current, timestampFormat: "12-hour" })))
+    .resolves.toEqual({ ...saved, themeAppearanceMode: "light", timestampFormat: "12-hour" });
+  expect(persistenceMocks.setClientSettings).toHaveBeenLastCalledWith({
+    ...saved, themeAppearanceMode: "light", timestampFormat: "12-hour",
+  });
+});

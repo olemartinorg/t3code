@@ -173,6 +173,8 @@ function isThemePreferenceMode(value: string | null): value is ThemePreferenceMo
 export function readAppearanceModePreference(theme: Theme): ThemePreferenceMode {
   if (typeof window !== "undefined") {
     try {
+      const owned = window.sandboxT3?.getClientSettings?.().themeAppearanceMode;
+      if (typeof owned === "string" && isThemePreferenceMode(owned)) return owned;
       const raw = window.localStorage.getItem(THEME_APPEARANCE_MODE_STORAGE_KEY);
       if (isThemePreferenceMode(raw)) return raw;
     } catch {
@@ -190,6 +192,18 @@ function writeAppearanceModePreference(appearanceMode: ThemePreferenceMode): voi
     // The legacy follow-system flag is read-only migration input now; the
     // mode key is the single source of truth.
     window.localStorage.setItem(THEME_APPEARANCE_MODE_STORAGE_KEY, appearanceMode);
+    if (window.sandboxT3?.saveClientSettings) {
+      // Use the same native settings hydration and serialized persistence owner.
+      // The browser value remains available if the task save fails.
+      void import("./useSettings").then(({ persistClientSettingsUpdate }) =>
+        persistClientSettingsUpdate(current => ({ ...current, themeAppearanceMode: appearanceMode })),
+      ).catch(() => {
+        void import("../components/ui/toast").then(({ toastManager }) => toastManager.add({
+          type: "error", title: "Appearance could not be saved for this task",
+          description: "Reopen settings and try again. Your browser choice is still available.",
+        }));
+      });
+    }
   } catch (cause) {
     throw new ThemeStorageError({
       operation: "write",
@@ -493,9 +507,14 @@ function subscribe(listener: () => void): () => void {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
     window.addEventListener("storage", handleStorageChange);
+    const removeNative = window.sandboxT3?.onState?.(() => {
+      applyTheme(getStored(), { suppressTransitions: true });
+      emitChange();
+    });
     removeWindowListeners = () => {
       mq?.removeEventListener("change", handleSystemAppearanceChange);
       window.removeEventListener("storage", handleStorageChange);
+      removeNative?.();
     };
   }
 

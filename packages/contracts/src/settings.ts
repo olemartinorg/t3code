@@ -298,6 +298,9 @@ export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
+  // The embedded Workbench keeps its existing appearance choice per task.
+  // Standalone clients continue to use their browser appearance preference.
+  themeAppearanceMode: Schema.optionalKey(Schema.Literals(["light", "dark", "system"])),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
