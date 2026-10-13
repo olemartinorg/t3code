@@ -47,7 +47,7 @@ export const liveThreadShell = (
     latestRunId: null,
     activeRunId: modes.activeRunId === undefined ? RunId.make("run:mcp-test") : modes.activeRunId,
     status: "running",
-    pendingRuntimeRequest: null,
+    pendingRuntimeRequest: null, pendingQuestions: [],
     latestVisibleMessage: null,
     latestUserMessageAt: null,
     hasActionableProposedPlan: false,

@@ -57,7 +57,7 @@ export function v2PullRequestThread(thread: PullRequestTestThread): Orchestratio
     latestRunId: null,
     activeRunId: null,
     status: "idle",
-    pendingRuntimeRequest: null,
+    pendingRuntimeRequest: null, pendingQuestions: [],
     latestVisibleMessage: null,
     latestUserMessageAt: thread.latestUserMessageAt
       ? DateTime.makeUnsafe(thread.latestUserMessageAt)

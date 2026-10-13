@@ -81,7 +81,7 @@ function shell(overrides: Partial<SettlementShell> = {}): SettlementShell {
     linkedPullRequest: null,
     status: "idle",
     activityRunStatus: null,
-    pendingRuntimeRequest: null,
+    pendingRuntimeRequest: null, pendingQuestions: [],
     pendingBackgroundTasks: [],
     latestRunId: null,
     latestRunRequestedAt: null,

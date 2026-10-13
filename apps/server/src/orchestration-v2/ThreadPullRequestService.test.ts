@@ -153,7 +153,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
       activeRunId: null,
       latestRunId: null,
       status: "idle",
-      pendingRuntimeRequest: null,
+      pendingRuntimeRequest: null, pendingQuestions: [],
       latestVisibleMessage: null,
       latestUserMessageAt: null,
       hasActionableProposedPlan: false,

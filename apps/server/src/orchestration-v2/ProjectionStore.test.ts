@@ -1,6 +1,8 @@
 import { assert, it, vi } from "@effect/vitest";
 import {
   EnvironmentId,
+  OrchestrationV2ThreadShellJson,
+  type OrchestrationV2RuntimeRequest,
   EventId,
   CommandId,
   CheckpointId,
@@ -2914,6 +2916,48 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           status === "completed" || status === "rolled_back" ? null : "secret:b",
         );
       }
+    }),
+  );
+
+  it.effect("question identities agree in SQL, memory and JSON shells independently of newer approvals", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* addRolledBackRecoveryCandidate("pending-questions");
+      const nodeId = NodeId.make("node:pending-questions:rolled-back");
+      const now = yield* DateTime.now;
+      const requests = new Map<string, OrchestrationV2RuntimeRequest>();
+      const update = (id: string, kind: "user_input" | "command", capability: "live" | "message" | "not_resumable", status: "pending" | "resolved" | "expired" | "cancelled" = "pending") => {
+        const request: OrchestrationV2RuntimeRequest = { id: RuntimeRequestId.make(id), nodeId, providerTurnId: null,
+          nativeRequestRef: null, kind, status,
+          responseCapability: capability === "live" ? { type: "live", providerSessionId: ProviderSessionId.make("session:questions") }
+            : capability === "message" ? { type: "message" } : { type: "not_resumable", reason: "Native session ended" },
+          createdAt: DateTime.add(now, { seconds: id === "approval" ? 10 : 0 }), resolvedAt: status === "pending" ? null : now };
+        requests.set(id, request);
+        return store.apply({id:EventId.make(`event:${id}:${status}:${capability}`),type:"runtime-request.updated",threadId,nodeId,driver,occurredAt:now,payload:request});
+      };
+      for (const [id, capability, multiSelect] of [["free-text","message",false],["options","live",false],["multiple","message",true],["inert","not_resumable",false]] as const) {
+        yield* update(id,"user_input",capability);
+        yield* store.apply({ id:EventId.make(`event:item:${id}`),type:"turn-item.updated",threadId,nodeId,driver,occurredAt:now,
+          payload:{id:TurnItemId.make(`item:${id}`),threadId,runId:null,nodeId,providerThreadId:null,providerTurnId:null,nativeItemRef:null,parentItemId:null,ordinal:2,status:"waiting",title:null,startedAt:now,completedAt:null,updatedAt:now,type:"user_input_request",requestId:RuntimeRequestId.make(id),
+            questions:[{id:"question",header:"Header",question:"Private question body",options:id==="free-text"?[]:[{label:"Choice",description:"Private option"}],multiSelect}]}});
+      }
+      yield* update("orphan","user_input","message");
+      yield* update("approval","command","live");
+      const observe = Effect.gen(function* () {
+        const memory = ProjectionStore.threadShellFromProjection(yield* store.getThreadProjection(threadId));
+        const sql = (yield* store.getShellSnapshot()).threads.find(row=>row.id===threadId)!;
+        assert.deepEqual(sql.pendingQuestions,memory.pendingQuestions);
+        const json = yield* Schema.encodeEffect(OrchestrationV2ThreadShellJson)(sql);
+        assert.deepEqual(json.pendingQuestions,sql.pendingQuestions.map(q=>({...q,createdAt:DateTime.formatIso(q.createdAt)})));
+        assert.equal(sql.pendingRuntimeRequest?.id,"approval");
+        assert.isFalse(JSON.stringify(json.pendingQuestions).includes("Private"));
+        return sql.pendingQuestions;
+      });
+      assert.deepEqual((yield* observe).map(q=>q.id),["free-text","inert","multiple","options"]);
+      yield* update("inert","user_input","message");
+      assert.equal((yield* observe).find(q=>q.id==="inert")?.responseCapability,"message");
+      for(const [id,status] of [["free-text","resolved"],["options","cancelled"],["multiple","expired"],["inert","resolved"]] as const)yield* update(id,"user_input","message",status);
+      assert.deepEqual(yield* observe,[]);
     }),
   );
 
