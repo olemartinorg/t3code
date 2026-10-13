@@ -1459,6 +1459,7 @@ export function threadShellFromProjection(
             id: pendingRuntimeRequest.id,
             kind: pendingRuntimeRequest.kind,
             createdAt: pendingRuntimeRequest.createdAt,
+            responseCapability: pendingRuntimeRequest.responseCapability.type,
           },
     pendingQuestions: pendingQuestionsFromProjection(projection),
     // Thread detail owns message bodies. Keeping them out of shell rows makes
@@ -1728,6 +1729,7 @@ function shellFromState(input: {
             id: input.state.pendingRuntimeRequest.id,
             kind: input.state.pendingRuntimeRequest.kind,
             createdAt: input.state.pendingRuntimeRequest.createdAt,
+            responseCapability: input.state.pendingRuntimeRequest.responseCapability.type,
           },
     pendingQuestions: input.state.pendingQuestions,
     latestVisibleMessage: null,
