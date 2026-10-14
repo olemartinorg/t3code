@@ -21,6 +21,8 @@ export type PhoneContext = {
   page: (cursor: string | null) => void;
   refresh: () => void;
   notificationSetup: () => Promise<void>;
+  permission: string;
+  notificationStatus: Awaited<ReturnType<SandboxApiClient["notificationStatus"]>> | null;
   muted: boolean;
   setMuted: (value: boolean) => Promise<void>;
 };

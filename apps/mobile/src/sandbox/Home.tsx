@@ -162,7 +162,7 @@ function TaskCard({ task }: { task: PhoneTask }) {
         <>
           <Button
             title="New conversation"
-            disabled={!phone.connected}
+            disabled={!phone.connected || (task.kind === "t3" && task.projectId === null)}
             onPress={() => void phone.open(task, null, "new-conversation").catch(failure)}
           />
           <Button
@@ -259,6 +259,15 @@ export function Home() {
           {phone.host && (
             <>
               <Text style={text}>Phone alerts for this PC</Text>
+              <Text style={text}>Android permission: {phone.permission}</Text>
+              <Text style={text}>
+                {phone.notificationStatus
+                  ? `PC master: ${phone.notificationStatus.enabled ? "enabled" : "disabled"} · PC presence: ${phone.notificationStatus.presence.state} · delivery: ${phone.notificationStatus.delivery}`
+                  : "Notification setup status unavailable"}
+              </Text>
+              {phone.notificationStatus?.error && (
+                <Text style={{ color: "#fca5a5" }}>{phone.notificationStatus.error}</Text>
+              )}
               <Switch
                 value={!phone.muted}
                 onValueChange={(enabled) => void phone.setMuted(!enabled).catch(failure)}

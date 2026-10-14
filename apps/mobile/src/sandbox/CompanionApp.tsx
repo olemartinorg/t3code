@@ -144,6 +144,10 @@ function Phone() {
     () => (host ? new SandboxApiClient(host.origin, host.token) : null),
     [host],
   );
+  const [permission, setPermission] = useState("unknown");
+  const [notificationStatus, setNotificationStatus] = useState<Awaited<
+    ReturnType<SandboxApiClient["notificationStatus"]>
+  > | null>(null);
   const [state, setState] = useState(emptyPhoneState),
     [connected, setConnected] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -199,6 +203,13 @@ function Phone() {
       );
       if (intentGeneration !== navigationGeneration.current) return;
       if (!current) throw new Error("This task or native project is no longer available");
+      if (intent === "open" && conversationId === null && current.conversations.length > 1) {
+        navigation.navigate("Home");
+        Alert.alert("Choose conversation", "Select the conversation listed under this task.");
+        return;
+      }
+      if (intent === "open" && conversationId === null && current.conversations.length === 1)
+        conversationId = current.conversations[0]!.id;
       route.current = { host, task: current, conversationId, intent };
       const view = await openPhoneView(
         host,
@@ -358,6 +369,7 @@ function Phone() {
   const notificationSetup = async () => {
     if (!host || !client) return;
     const result = await Notifications.requestPermissionsAsync();
+    setPermission(result.status);
     if (!result.granted) {
       Alert.alert(
         "Notifications disabled",
@@ -377,22 +389,66 @@ function Phone() {
         item.serverId === host.serverId ? { ...item, notifications: true } : item,
       ),
     );
+    setNotificationStatus(await client.notificationStatus());
   };
   useEffect(() => {
+    let live = true;
+    if (!host || !client || !foreground) {
+      setNotificationStatus(null);
+      return;
+    }
+    void Notifications.getPermissionsAsync()
+      .then((value) => {
+        if (live) setPermission(value.status);
+      })
+      .catch(() => {
+        if (live) setPermission("unavailable");
+      });
+    if (connected)
+      void client.notificationStatus().then(
+        (value) => {
+          if (live) setNotificationStatus(value);
+        },
+        () => {
+          if (live) setNotificationStatus(null);
+        },
+      );
+    return () => {
+      live = false;
+    };
+  }, [host, client, foreground, connected]);
+  useEffect(() => {
     if (!host || !client || !foreground) return;
+    let live = true;
+    const update = async (value?: string) => {
+      const permission = await Notifications.getPermissionsAsync();
+      if (live) setPermission(permission.status);
+      const token = value ?? String((await Notifications.getDevicePushTokenAsync()).data);
+      if (!live) return;
+      await client.registerPhone(await installationId(), {
+        serverId: host.serverId,
+        token,
+        enabled: host.notifications,
+        permission: permission.granted
+          ? "granted"
+          : permission.status === "undetermined"
+            ? "undetermined"
+            : "denied",
+      });
+    };
     const listener = Notifications.addPushTokenListener((token) => {
-      void installationId()
-        .then((id) =>
-          client.registerPhone(id, {
-            serverId: host.serverId,
-            token: String(token.data),
-            enabled: host.notifications,
-            permission: "granted",
-          }),
-        )
-        .catch(() => setError("Notification token update waits for the LAN"));
+      void update(String(token.data)).catch(() => {
+        if (live) setError("Notification token update waits for the LAN");
+      });
     });
-    return () => listener.remove();
+    if (host.notifications)
+      void update().catch(() => {
+        if (live) setError("Notification permission/token update waits for the LAN");
+      });
+    return () => {
+      live = false;
+      listener.remove();
+    };
   }, [host, client, foreground]);
   useEffect(() => {
     let live = true;
@@ -505,16 +561,21 @@ function Phone() {
     page,
     refresh: () => refresh((value) => value + 1),
     notificationSetup,
+    permission,
+    notificationStatus,
     muted: !host?.notifications,
     setMuted: async (muted: boolean) => {
       if (!host) return;
+      if (!muted) {
+        await notificationSetup();
+        return;
+      }
       await persist(
         hosts.map((item) =>
-          item.serverId === host.serverId ? { ...item, notifications: !muted } : item,
+          item.serverId === host.serverId ? { ...item, notifications: false } : item,
         ),
       );
-      if (!muted) await notificationSetup();
-      else {
+      {
         const permission = await Notifications.getPermissionsAsync();
         const token = await Notifications.getDevicePushTokenAsync();
         await client?.registerPhone(await installationId(), {
