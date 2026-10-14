@@ -162,6 +162,7 @@ function Phone() {
     conversationId: string | null;
     intent: "open" | "new-conversation" | "settings";
   } | null>(null);
+  const navigationGeneration = useRef(0);
   const theme = useMobileNavigationTheme();
   const persist = useCallback(async (next: PhoneHost[]) => {
     await savePhoneHosts(next);
@@ -192,13 +193,22 @@ function Phone() {
     ) => {
       if (!host) return;
       if (!client) return;
+      const intentGeneration = ++navigationGeneration.current;
       const current = (await client.tasks()).tasks.find((candidate) =>
         samePhoneTarget(task, candidate),
       );
+      if (intentGeneration !== navigationGeneration.current) return;
       if (!current) throw new Error("This task or native project is no longer available");
       route.current = { host, task: current, conversationId, intent };
-      const view = await openPhoneView(host, portableTaskTarget(current, conversationId, intent));
-      if (!navigation.isReady()) return;
+      const view = await openPhoneView(
+        host,
+        portableTaskTarget(current, conversationId, intent),
+      ).catch((cause) => {
+        if (intentGeneration !== navigationGeneration.current) return null;
+        throw cause;
+      });
+      if (!view) return;
+      if (intentGeneration !== navigationGeneration.current || !navigation.isReady()) return;
       if (intent === "settings")
         navigation.navigate("SettingsSheet", {
           screen: "SettingsContent",
@@ -232,8 +242,10 @@ function Phone() {
     const listener = AppState.addEventListener("change", (phase) => {
       const active = phase === "active";
       setForeground(active);
-      if (!active) void closePhoneView();
-      else {
+      if (!active) {
+        navigationGeneration.current++;
+        void closePhoneView();
+      } else {
         const current = route.current;
         if (current && current.host.serverId === selected)
           void open(current.task, current.conversationId, current.intent).catch(() =>
@@ -328,6 +340,7 @@ function Phone() {
       );
   }, [pendingLaunch, state, host, open]);
   const addHost = async (name: string, origin: string, token: string) => {
+    navigationGeneration.current++;
     if (!name.trim() || name.length > 80 || !token || token.length > 8192 || /[\r\n]/.test(token))
       throw new Error("Enter a connection name and valid Sandbox bearer key");
     origin = trustedOrigin(origin);
@@ -384,6 +397,7 @@ function Phone() {
   useEffect(() => {
     let live = true;
     const follow = async (url: string) => {
+      const intentGeneration = ++navigationGeneration.current;
       try {
         const link = new URL(url);
         if (link.protocol !== "sandbox-companion:" || link.hostname !== "notification") return;
@@ -399,6 +413,7 @@ function Phone() {
           Date.parse(payload.expiresAt) < Date.now()
         )
           throw new Error("Notification expired or this host is disabled");
+        if (!live || intentGeneration !== navigationGeneration.current) return;
         nativeSandbox().selectSandboxHost(targetHost.origin);
         const api = new SandboxApiClient(targetHost.origin, targetHost.token);
         if ((await api.identity()).serverId !== targetHost.serverId)
@@ -414,7 +429,7 @@ function Phone() {
         );
         if (!task || !task.conversations.some((item) => item.id === target.conversationId))
           throw new Error("Conversation is no longer available");
-        if (!live) return;
+        if (!live || intentGeneration !== navigationGeneration.current) return;
         setSelected(targetHost.serverId);
         route.current = {
           host: targetHost,
@@ -431,13 +446,14 @@ function Phone() {
           targetHost,
           portableTaskTarget(task, target.conversationId),
         );
-        if (live)
+        if (live && intentGeneration === navigationGeneration.current)
           navigation.navigate("Thread", {
             environmentId: view.session.environmentId,
             threadId: target.conversationId,
           });
-        else await closePhoneView();
+        else if (currentNativeView() === view) await closePhoneView();
       } catch {
+        if (!live || intentGeneration !== navigationGeneration.current) return;
         setError(
           "Notification could not be opened. Reconnect to the PC and select the conversation.",
         );
@@ -461,6 +477,7 @@ function Phone() {
     error,
     addHost,
     selectHost: (id: string) => {
+      navigationGeneration.current++;
       route.current = null;
       setPendingLaunch(null);
       void closePhoneView();
@@ -470,6 +487,7 @@ function Phone() {
     },
     removeHost: async () => {
       if (!host) return;
+      navigationGeneration.current++;
       route.current = null;
       await closePhoneView();
       await persist(hosts.filter((item) => item.serverId !== host.serverId));
@@ -516,6 +534,7 @@ function Phone() {
         onStateChange={(state) => {
           const top = state?.routes[state.index];
           if (top?.name === "Home") {
+            navigationGeneration.current++;
             route.current = null;
             void closePhoneView();
           } else if (top?.name === "Thread") {

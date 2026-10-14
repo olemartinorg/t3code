@@ -313,7 +313,13 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       }
       onAction={() => {
         if (routeEnvironmentRuntime !== null) {
-          if (sandboxCompanion) void reconnectPhoneView();
+          if (sandboxCompanion)
+            void reconnectPhoneView().catch(() =>
+              Alert.alert(
+                "Conversation unavailable",
+                "Reconnect to the trusted LAN PC and select the conversation again.",
+              ),
+            );
           else onReconnectEnvironment(environmentId);
           return;
         }
@@ -537,7 +543,13 @@ function ThreadRouteContent(
     if (!environmentId) {
       return;
     }
-    if (sandboxCompanion) void reconnectPhoneView();
+    if (sandboxCompanion)
+      void reconnectPhoneView().catch(() =>
+        Alert.alert(
+          "Conversation unavailable",
+          "Reconnect to the trusted LAN PC and select the conversation again.",
+        ),
+      );
     else onReconnectEnvironment(environmentId);
   }, [environmentId, onReconnectEnvironment]);
 
