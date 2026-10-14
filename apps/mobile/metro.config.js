@@ -109,12 +109,15 @@ async function generateMobileThirdPartyLicenses() {
   );
   const manifest = await generateThirdPartyLicenseManifest({
     configFile: path.join(workspaceRoot, "third-party-licenses.config.json"),
-    packageManifests: [
-      { bundle: "mobile", path: path.join(__dirname, "package.json") },
-      ...(sandboxClientRoot
-        ? [{ bundle: "mobile", path: path.join(sandboxClientRoot, "package.json") }]
-        : []),
-    ],
+    packageManifests: [{ bundle: "mobile", path: path.join(__dirname, "package.json") }],
+    // The portable SDK imports Zod, not the Sandbox server's Firebase/Fastify dependencies.
+    // Reuse the vendor collector for the actual independently resolved SDK dependency.
+    ...(sandboxClientRoot
+      ? {
+          bundleName: "mobile",
+          bundledModuleIds: [require.resolve("zod", { paths: [sandboxClientRoot] })],
+        }
+      : {}),
     allowMissingGeneratedNotices:
       process.env.NODE_ENV !== "production" &&
       process.env.EAS_BUILD !== "true" &&
