@@ -1,6 +1,7 @@
 import { expect, test } from "vite-plus/test";
 import {
   applyPhoneFrame,
+  phoneAgentAvailability,
   emptyPhoneState,
   portableTaskTarget,
   samePhoneTarget,
@@ -92,4 +93,51 @@ test("PR facts and supplied relationships/visibility replace together without re
     applyPhoneFrame(next, { type: "state", subscriptions: [] } as unknown as Frame)
       .pullRequestViews,
   ).toBe(views);
+});
+
+test("idle connected native projects retain Open/New/Settings while unavailable and projectless targets keep their restrictions", () => {
+  const task = {
+    kind: "t3",
+    connection: "connected",
+    projectId: "native-project",
+    presentation: {
+      running: false,
+      actions: [
+        { kind: "action", id: "open", enabled: true },
+        { kind: "action", id: "new-conversation", enabled: true },
+        { kind: "action", id: "settings", enabled: true },
+      ],
+    },
+  } as PhoneTask;
+  expect(phoneAgentAvailability(task)).toEqual({
+    open: true,
+    newConversation: true,
+    settings: true,
+  });
+  expect(phoneAgentAvailability({ ...task, connection: "disconnected" } as PhoneTask)).toEqual({
+    open: false,
+    newConversation: false,
+    settings: false,
+  });
+  expect(phoneAgentAvailability({ ...task, projectId: null } as PhoneTask)).toEqual({
+    open: true,
+    newConversation: false,
+    settings: true,
+  });
+  expect(
+    phoneAgentAvailability({
+      ...task,
+      presentation: { ...task.presentation, actions: [] },
+    } as PhoneTask),
+  ).toEqual({ open: false, newConversation: false, settings: false });
+  expect(
+    phoneAgentAvailability({
+      ...task,
+      kind: "sandbox",
+      presentation: {
+        ...task.presentation,
+        actions: [{ kind: "action", id: "start", enabled: true }],
+      },
+    } as unknown as PhoneTask),
+  ).toEqual({ open: false, newConversation: false, settings: false });
 });
