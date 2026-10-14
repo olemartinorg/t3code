@@ -1,5 +1,4 @@
-import { sandboxCompanion } from "../../sandbox/variant";
-import { reconnectPhoneView } from "../../sandbox/reconnect";
+import { mobileIntegration } from "../../embedding/integration";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
@@ -250,11 +249,11 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       }
       onAction={() => {
         if (routeEnvironmentRuntime !== null) {
-          if (sandboxCompanion)
-            void reconnectPhoneView().catch(() =>
+          if (mobileIntegration().reconnect)
+            void mobileIntegration().reconnect!().catch(() =>
               Alert.alert(
                 "Conversation unavailable",
-                "Reconnect to the trusted LAN PC and select the conversation again.",
+                "Reconnect to the server and select the conversation again.",
               ),
             );
           else onReconnectEnvironment(environmentId);
@@ -481,11 +480,11 @@ function ThreadRouteContent(
     if (!environmentId) {
       return;
     }
-    if (sandboxCompanion)
-      void reconnectPhoneView().catch(() =>
+    if (mobileIntegration().reconnect)
+      void mobileIntegration().reconnect!().catch(() =>
         Alert.alert(
           "Conversation unavailable",
-          "Reconnect to the trusted LAN PC and select the conversation again.",
+          "Reconnect to the server and select the conversation again.",
         ),
       );
     else onReconnectEnvironment(environmentId);

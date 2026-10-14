@@ -1,15 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("../sandbox/variant", () => ({
-  get sandboxCompanion() {
-    return mocks.companion;
-  },
-}));
-
 const mocks = vi.hoisted(() => ({
-  companion: false,
-  nativeFetch: vi.fn(),
-  write: vi.fn(),
   directories: new Set<string>(),
   deleted: vi.fn(),
   download: vi.fn(),
@@ -62,10 +53,6 @@ vi.mock("expo-file-system", () => {
       this.uri = typeof source === "string" ? source : `${source.uri}/${encodeURIComponent(name!)}`;
     }
 
-    create() {}
-    async write(bytes: Uint8Array) {
-      mocks.write(this.uri, bytes);
-    }
     async copy(destination: File): Promise<void> {
       await mocks.copy(this.uri, destination.uri);
     }
@@ -73,10 +60,6 @@ vi.mock("expo-file-system", () => {
 
   return { Directory, File, Paths: { cache: "file:///cache" } };
 });
-
-vi.mock("../sandbox/transport", () => ({
-  nativeT3Fetch: (...args: unknown[]) => mocks.nativeFetch(...args),
-}));
 
 vi.mock("expo", () => ({ requireNativeModule: () => ({ openFile: mocks.open }) }));
 
@@ -105,10 +88,6 @@ const input = {
 };
 
 beforeEach(() => {
-  mocks.companion = false;
-  mocks.nativeFetch.mockReset();
-  mocks.write.mockReset();
-  mocks.nativeFetch.mockResolvedValue(new Response(new Uint8Array([4, 5, 6])));
   mocks.open.mockReset();
   mocks.open.mockResolvedValue(undefined);
   mocks.directories.clear();
@@ -137,21 +116,6 @@ afterEach(() => {
 });
 
 describe("downloadAndShareAttachment", () => {
-  it("companion native viewer receives cached bytes from the scoped LAN transport", async () => {
-    mocks.companion = true;
-    const result = await downloadAttachmentForPreview({
-      ...input,
-      signal: new AbortController().signal,
-    });
-    expect(mocks.nativeFetch).toHaveBeenCalledWith(
-      input.url,
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(mocks.write).toHaveBeenCalledWith(expect.any(String), new Uint8Array([4, 5, 6]));
-    expect(mocks.download).not.toHaveBeenCalled();
-    result?.dispose();
-  });
-
   it("downloads the chosen environment's signed URL and shares the local file", async () => {
     const controller = new AbortController();
     await downloadAndShareAttachment({ ...input, signal: controller.signal });

@@ -1,5 +1,4 @@
-import { sandboxCompanion } from "../sandbox/variant";
-import { nativeT3Fetch } from "../sandbox/transport";
+import { mobileIntegration } from "../embedding/integration";
 import type { ChatFileAttachment } from "@t3tools/contracts";
 import type { Directory } from "expo-file-system";
 import type { SharingOptions } from "expo-sharing";
@@ -68,17 +67,10 @@ async function downloadRemote(
   file: import("expo-file-system").File,
   signal: AbortSignal,
 ) {
-  if (!sandboxCompanion) {
-    const { File } = await import("expo-file-system");
-    await File.downloadFileAsync(url, file, { signal });
-    return;
-  }
-  const response = await nativeT3Fetch(url, { signal });
-  if (!response.ok) throw new Error("Attachment download failed");
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (signal.aborted) return;
-  file.create({ overwrite: true });
-  await file.write(bytes);
+  const custom = mobileIntegration().downloadAttachment;
+  if (custom) return custom(url, file, signal);
+  const { File } = await import("expo-file-system");
+  await File.downloadFileAsync(url, file, { signal });
 }
 
 async function availableSharing(signal: AbortSignal) {

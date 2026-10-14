@@ -1,4 +1,4 @@
-import { sandboxCompanion } from "../../sandbox/variant";
+import { mobileIntegration } from "../../embedding/integration";
 import { useMemo } from "react";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
@@ -24,7 +24,7 @@ export function ThreadHeader(
   const { onOpenTerminal, onMergeBack } = props.gitControls;
   const native = useThreadHeaderOptions(props);
   const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
-    if (sandboxCompanion) return [];
+    if (mobileIntegration().threadTools === false) return [];
     const actions: ScreenHeaderAction[] = [];
     if (props.onReturnToThread) {
       actions.push({
@@ -81,11 +81,13 @@ export function ThreadHeader(
       <ScreenHeader
         title={props.title}
         subtitle={props.subtitle}
-        sidebar={sandboxCompanion ? undefined : native.sidebar}
-        options={sandboxCompanion ? undefined : native.options}
+        sidebar={mobileIntegration().threadTools === false ? undefined : native.sidebar}
+        options={mobileIntegration().threadTools === false ? undefined : native.options}
         optionsVersion={native.optionsVersion}
         trailing={
-          !sandboxCompanion && props.fileInspectorSupported && props.hasThreadCwd ? (
+          mobileIntegration().threadTools !== false &&
+          props.fileInspectorSupported &&
+          props.hasThreadCwd ? (
             <ScreenHeaderButton
               accessibilityLabel={
                 props.inspectorMode !== null && panes.auxiliaryPaneVisible

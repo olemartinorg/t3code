@@ -2,19 +2,8 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("../sandbox/variant", () => ({
-  get sandboxCompanion() {
-    return mocks.companion;
-  },
-}));
-vi.mock("../sandbox/transport", () => ({
-  nativeT3Fetch: (...args: unknown[]) => mocks.nativeFetch(...args),
-}));
-
 const mocks = vi.hoisted(() => ({
   canOperate: true,
-  companion: false,
-  nativeFetch: vi.fn(),
   documentUri: "file:///documents",
   createAssetUrl: vi.fn(),
   createUploadUrl: Symbol("create-upload-url"),
@@ -87,9 +76,6 @@ vi.mock("expo-file-system", () => ({
       mocks.deleteFile(this.uri);
     }
 
-    async arrayBuffer() {
-      return new Uint8Array([1, 2, 3]).buffer;
-    }
     async base64() {
       return mocks.readBase64(this.uri);
     }
@@ -211,9 +197,6 @@ function removeCallsFor(attachmentId: string): number {
 describe("prepareTurnAttachments", () => {
   beforeEach(() => {
     mocks.canOperate = true;
-    mocks.companion = false;
-    mocks.nativeFetch.mockReset();
-    mocks.nativeFetch.mockResolvedValue(new Response(null, { status: 204 }));
     mocks.documentUri = "file:///documents";
     mocks.createAssetUrl.mockReset();
     mocks.createAssetUrl.mockImplementation((target: unknown) => target);
@@ -400,37 +383,6 @@ describe("prepareTurnAttachments", () => {
       await expect(preparing).resolves.toEqual({ status: "abandoned" });
     },
   );
-
-  it("companion uploads original phone bytes through the scoped LAN transport", async () => {
-    mocks.companion = true;
-    const prepared = await prepareTurnAttachments({
-      environmentId,
-      attachments: [fileBackedImage],
-      supportsImageUploads: true,
-    });
-    expect(prepared.status).toBe("ready");
-    expect(mocks.nativeFetch).toHaveBeenCalledWith(
-      "https://environment.example/api/attachments/upload/signed",
-      expect.objectContaining({
-        method: "POST",
-        body: new Uint8Array([1, 2, 3]).buffer,
-        headers: { "Content-Type": "image/png" },
-      }),
-    );
-    expect(mocks.upload).not.toHaveBeenCalled();
-  });
-  it("companion upload refusal retains the native failed-send outcome", async () => {
-    mocks.companion = true;
-    mocks.nativeFetch.mockResolvedValue(new Response(null, { status: 403 }));
-    await expect(
-      prepareTurnAttachments({
-        environmentId,
-        attachments: [fileBackedImage],
-        supportsImageUploads: true,
-      }),
-    ).rejects.toThrow("Attachment upload failed");
-    expect(mocks.upload).not.toHaveBeenCalled();
-  });
 
   it("uploads a file-backed image from its owned copy without staging base64", async () => {
     const prepared = await prepareTurnAttachments({

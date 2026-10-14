@@ -1,4 +1,4 @@
-import { sandboxCompanion } from "../../sandbox/variant";
+import { mobileIntegration } from "../../embedding/integration";
 import { useAtomValue } from "@effect/atom-react";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
@@ -355,7 +355,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     environmentId: props.environmentId,
     threadId: props.selectedThread.id,
     enabled:
-      !sandboxCompanion && props.serverConfig?.environment.capabilities.serverBrowser === true,
+      mobileIntegration().threadTools !== false &&
+      props.serverConfig?.environment.capabilities.serverBrowser === true,
   });
   const openBrowserPreview = useCallback(
     (tabId?: string) => {
@@ -1203,7 +1204,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         <View className="flex-1" />
       )}
 
-      {showContent && !sandboxCompanion ? (
+      {showContent && mobileIntegration().threadTools !== false ? (
         <ThreadBrowserFloat
           key={selectedThreadKey}
           environmentId={props.environmentId}
@@ -1252,12 +1253,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   status={floatingStatus}
                   lift={floatingControlLift}
                   devicePreview={
-                    !sandboxCompanion && devicePreviews.length > 0
+                    mobileIntegration().threadTools !== false && devicePreviews.length > 0
                       ? { count: devicePreviews.length, onPress: openDevicePreview }
                       : null
                   }
                   browserPreview={
-                    !sandboxCompanion && browserTabs.tabs.length > 0
+                    mobileIntegration().threadTools !== false && browserTabs.tabs.length > 0
                       ? { count: browserTabs.tabs.length, onPress: () => openBrowserPreview() }
                       : null
                   }

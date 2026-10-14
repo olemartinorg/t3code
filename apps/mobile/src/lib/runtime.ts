@@ -1,6 +1,5 @@
+import { mobileFetch, mobileWebSocket } from "../embedding/integration";
 import * as Layer from "effect/Layer";
-import Constants from "expo-constants";
-import { nativeT3Fetch, nativeT3Socket } from "../sandbox/transport";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Socket from "effect/socket/Socket";
 
@@ -19,11 +18,8 @@ function configuredRelayUrl(): string {
   return resolveCloudPublicConfig().relay.url ?? "http://relay.invalid";
 }
 
-const sandboxCompanion = Constants.expoConfig?.extra?.sandboxCompanion === true;
-const layerHttpClient = layerRemoteHttpClient(sandboxCompanion ? nativeT3Fetch : fetch);
-const layerSocket = sandboxCompanion
-  ? Layer.succeed(Socket.WebSocketConstructor, nativeT3Socket)
-  : Socket.layerWebSocketConstructorGlobal;
+const layerHttpClient = layerRemoteHttpClient(mobileFetch);
+const layerSocket = Layer.succeed(Socket.WebSocketConstructor, mobileWebSocket);
 
 type RuntimeLayerSource =
   | ReturnType<typeof ManagedRelayLayer.layer>

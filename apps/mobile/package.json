@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "main": "index.ts",
+  "exports": {
+    "./embedding": "./src/embedding/index.ts",
+    "./embedding/runtime": "./src/embedding/runtime.ts",
+    "./embedding/integration": "./src/embedding/integration.ts",
+    "./package.json": "./package.json",
+    "./embedding/navigation": "./src/embedding/navigation.ts"
+  },
   "scripts": {
     "dev": "expo start",
     "dev:client": "APP_VARIANT=development expo start --dev-client --scheme t3code-dev --lan",

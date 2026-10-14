@@ -10,15 +10,6 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class T3AgentNotificationsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T3AgentNotifications")
-    OnCreate { appContext.reactContext?.let { SandboxLanTransport.install(it) } }
-    Function("configureSandboxNotifications") { installationId: String, hosts: Map<String, Boolean> ->
-      appContext.reactContext?.let { SandboxNotifications.configure(it, installationId, hosts) }
-    }
-    Function("setSandboxThreadOnScreen") { serverId: String?, target: String? ->
-      appContext.reactContext?.let { SandboxNotifications.setThread(it, serverId, target) }
-    }
-    Function("setSandboxViewToken") { token: String? -> SandboxLanTransport.setViewToken(token) }
-    Function("selectSandboxHost") { origin: String? -> SandboxLanTransport.select(origin) }
 
     Function("configure") {
         deviceId: String,

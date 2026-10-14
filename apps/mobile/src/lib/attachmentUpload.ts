@@ -1,5 +1,4 @@
-import { sandboxCompanion } from "../sandbox/variant";
-import { nativeT3Fetch } from "../sandbox/transport";
+import { mobileIntegration } from "../embedding/integration";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import {
   clampFileAttachmentUploadBytes,
@@ -292,15 +291,9 @@ async function uploadFileBytes(
         encoding: "base64",
       });
     }
-    if (sandboxCompanion) {
-      const response = await nativeT3Fetch(url, {
-        method: "POST",
-        body: await file.arrayBuffer(),
-        headers: { "Content-Type": composerAttachmentWireMimeType(attachment) },
-        signal,
-      });
-      if (!response.ok) throw new Error("Attachment upload failed");
-      onProgress?.(1);
+    const custom = mobileIntegration().uploadAttachment;
+    if (custom) {
+      await custom(url, file, composerAttachmentWireMimeType(attachment), signal, onProgress);
       return;
     }
     const result = await file.upload(url, {

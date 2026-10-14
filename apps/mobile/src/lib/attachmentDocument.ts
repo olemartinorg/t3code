@@ -1,5 +1,4 @@
-import { sandboxCompanion } from "../sandbox/variant";
-import { nativeT3Fetch } from "../sandbox/transport";
+import { mobileIntegration, mobileFetch } from "../embedding/integration";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
@@ -61,7 +60,7 @@ export function useAttachmentDocument(input: {
   // fine while its bytes are not UTF-8, and switching back to the page must not stay stuck.
   const [contentError, setContentError] = useState<string | null>(null);
   const textReadUrl = useRef<{ uri: string; authorizedAt: number } | null>(null);
-  const [rendered, setRendered] = useState(!sandboxCompanion);
+  const [rendered, setRendered] = useState(mobileIntegration().renderHtmlAttachments !== false);
   const presentation = attachmentDocumentPresentation({
     kind,
     hasTable: table !== null,
@@ -148,7 +147,7 @@ export function useAttachmentDocument(input: {
               textReadUrl.current = { uri: refreshed, authorizedAt: Date.now() };
             }
           }
-          return (sandboxCompanion ? nativeT3Fetch : fetch)(target, {
+          return mobileFetch(target, {
             signal: controller.signal,
             headers: {
               ...(sizeBytes > 0 ? { Range: `bytes=0-${FILE_TEXT_PREVIEW_MAX_BYTES}` } : {}),
@@ -201,7 +200,8 @@ export function useAttachmentDocument(input: {
     error: error ?? (needsText ? contentError : null),
     needsText,
     rendered,
-    setRendered: (value: boolean) => setRendered(sandboxCompanion ? false : value),
+    setRendered: (value: boolean) =>
+      setRendered(mobileIntegration().renderHtmlAttachments === false ? false : value),
     revision,
     retry: () => setRevision((value) => value + 1),
     share,

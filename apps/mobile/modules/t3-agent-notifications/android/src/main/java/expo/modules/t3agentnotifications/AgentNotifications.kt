@@ -20,9 +20,7 @@ import expo.modules.notifications.service.ExpoFirebaseMessagingService
 
 class AgentMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(remoteMessage: RemoteMessage) {
-    if (remoteMessage.data["protocol"] == "sandbox.android.1") {
-      SandboxNotifications.receive(this, remoteMessage.data)
-    } else if (remoteMessage.data["t3_kind"] == "agent_activity") {
+    if (remoteMessage.data["t3_kind"] == "agent_activity") {
       AgentNotifications.receive(this, remoteMessage.data)
     } else {
       super.onMessageReceived(remoteMessage)
