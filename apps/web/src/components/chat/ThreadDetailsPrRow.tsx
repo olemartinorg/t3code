@@ -1,10 +1,11 @@
+import { hostIntegration } from "../../hostIntegration";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 /**
  * The thread details panel's pull request row: what the thread's pull request is, and the one
  * thing worth doing to it right now.
  *
- * The row is an ordinary external link to the pull request. Once the
+ * The row opens the pull request in the native panel, or the host-selected destination. Once the
  * host answers, the title gets the full first line and a second line carries the number, checks,
  * watch, and a single action slot, ranked by what unblocks the merge next: "Resolve" on
  * conflicts, "Ready" on a draft, "Fix" under failing checks, and "Merge" only once the branch is
@@ -394,7 +395,9 @@ export function ThreadDetailsPrRow({
             size="sm"
             part={part}
             aria-label={openAriaLabel}
-            render={<a href={destinationUrl} target="_blank" rel="noopener noreferrer" />}
+            {...(hostIntegration()?.externalNavigation
+              ? { render: <a href={destinationUrl} target="_blank" rel="noopener noreferrer" /> }
+              : { onClick: onOpen })}
           />
         }
       >

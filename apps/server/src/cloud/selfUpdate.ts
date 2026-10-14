@@ -101,7 +101,7 @@ export const withRunningThreadContinuation = Effect.fn(
         .update(
           request,
           (stage) =>
-            (request.continueRunningThreads !== false &&
+            (request.continueRunningThreads === true &&
             input.mode !== "desktop" &&
             stage === "installing" &&
             !prepared
@@ -126,7 +126,7 @@ export const withRunningThreadContinuation = Effect.fn(
             if (
               result.method === "desktop-app" &&
               result.desktopUpdateToken !== undefined &&
-              request.continueRunningThreads !== false
+              request.continueRunningThreads === true
             ) {
               return Ref.update(desktopContinuationTokens, HashSet.add(result.desktopUpdateToken));
             }

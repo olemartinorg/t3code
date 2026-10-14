@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -22,7 +23,8 @@ import type {
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
-  type MouseEvent, type ReactElement,
+  type MouseEvent,
+  type ReactElement,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -939,7 +941,13 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  render={<a href={publishResult.repository.url} target="_blank" rel="noopener noreferrer" />}
+                  render={
+                    <a
+                      href={publishResult.repository.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
                 >
                   Open on {publishProviderLabel}
                 </Button>
@@ -1379,8 +1387,13 @@ export default function GitActionsControl({
       } else if (toastCta.kind === "open_pr") {
         toastActionProps = {
           children: toastCta.label,
-          render: <a href={toastCta.url} target="_blank" rel="noopener noreferrer" />,
-          onClick: () => closeResultToast(),
+          ...(hostIntegration()?.externalNavigation
+            ? { render: <a href={toastCta.url} target="_blank" rel="noopener noreferrer" /> }
+            : {}),
+          onClick: (event) => {
+            closeResultToast();
+            if (!hostIntegration()?.externalNavigation) openPrLink(event, toastCta.url);
+          },
         };
       }
 

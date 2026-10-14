@@ -129,7 +129,6 @@ export function ServerUpdatesAction({
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const eligible = targets.filter(
     (target) =>
-      !hostIntegration()?.updateNotice?.(target.environmentId) &&
       target.selfUpdate !== null &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
   );

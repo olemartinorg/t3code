@@ -149,3 +149,35 @@ it.each<[PullRequestCheck["status"], PullRequestCheck["status"], string]>([
     .map((span) => span.children.filter((child) => typeof child === "string").join(""));
   expect(text.filter((value) => /^\d+\/\d+$/.test(value))).toEqual(count ? [count] : []);
 });
+
+// Native PR-panel routing remains the default; external anchors are an explicit embedding choice.
+it.each([false, true])("routes the PR row with host externalNavigation=%s", (external) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", external ? { t3Host: { externalNavigation: true } } : {});
+  const onOpen = vi.fn();
+  act(() => {
+    renderer = create(
+      <ThreadDetailsPrRow
+        environmentId={EnvironmentId.make("environment")}
+        pr={null}
+        number={1}
+        status={null}
+        project={null}
+        label="Test PR"
+        openAriaLabel="Open PR"
+        onOpen={onOpen}
+      />,
+    );
+  });
+  const row = renderer.root.findAll(
+    (node) => node.props["aria-label"] === "Open PR" && typeof node.type === "string",
+  )[0]!;
+  if (external) {
+    expect(row.type).toBe("a");
+    expect(row.props.target).toBe("_blank");
+    expect(onOpen).not.toHaveBeenCalled();
+  } else {
+    act(() => row.props.onClick({}));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  }
+});

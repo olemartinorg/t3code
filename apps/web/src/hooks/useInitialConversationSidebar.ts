@@ -23,12 +23,12 @@ export function useInitialConversationSidebar({
       thread.archivedAt === null &&
       thread.settledOverride !== "settled",
   ).length;
+  const integration = hostIntegration()?.sidebar;
   const open =
-    manual ??
-    hostIntegration()?.sidebar?.initial({ ready: shellReady, environmentId, openCount: count });
+    manual ?? integration?.initial({ ready: shellReady, environmentId, openCount: count });
   const onOpenChange = (value: boolean) => {
     setManual(value);
     hostIntegration()?.sidebar?.changed(value);
   };
-  return { open, onOpenChange };
+  return integration && open !== undefined ? { open, onOpenChange } : {};
 }

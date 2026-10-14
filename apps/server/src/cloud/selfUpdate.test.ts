@@ -128,6 +128,53 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
+  for (const mode of ["web", "desktop"] as const) {
+    for (const preference of [undefined, false] as const) {
+      it.effect(`does not resume ${mode} threads when continuation is ${String(preference)}`, () =>
+        Effect.gen(function* () {
+          const events: string[] = [];
+          const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
+            mode,
+            selfUpdate: {
+              update: (_input, reportProgress = () => Effect.void) =>
+                reportProgress("installing").pipe(
+                  Effect.as(
+                    mode === "desktop"
+                      ? {
+                          targetVersion: "1.1.0",
+                          method: "desktop-app" as const,
+                          desktopUpdateToken: "token",
+                        }
+                      : {
+                          targetVersion: "1.1.0",
+                          method: "boot-service" as const,
+                          updateId: "update",
+                        },
+                  ),
+                ),
+              commitDesktopUpdate: () =>
+                Effect.fail(new ServerSelfUpdateError({ reason: "test handoff" })),
+            },
+            prepare: Effect.sync(() => {
+              events.push("prepare");
+              return [ThreadId.make("running")];
+            }),
+            clear: (threadIds) =>
+              Effect.sync(() => {
+                if (threadIds.length) events.push("clear");
+              }),
+          });
+          yield* selfUpdate.update({
+            targetVersion: "1.1.0",
+            ...(preference === undefined ? {} : { continueRunningThreads: preference }),
+          });
+          if (mode === "desktop") yield* selfUpdate.commitDesktopUpdate("token").pipe(Effect.flip);
+          expect(events).toEqual([]);
+        }),
+      );
+    }
+  }
+
   it.effect("marks running threads at the boot-service handoff", () =>
     Effect.gen(function* () {
       const events: string[] = [];

@@ -333,8 +333,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
         defaultOpen
-        {...(initialSidebar.open === undefined ? {} : { open: initialSidebar.open })}
-        onOpenChange={initialSidebar.onOpenChange}
+        {...initialSidebar}
         style={sidebarProviderStyle}
       >
         <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />

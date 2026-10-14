@@ -1,3 +1,4 @@
+import { hostIntegration } from "../../hostIntegration";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   htmlRenderThemeFragment,
@@ -8,6 +9,8 @@ import {
 } from "@t3tools/shared/htmlRender";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
+import { useOpenLink } from "~/browser/useOpenLink";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
@@ -88,8 +91,31 @@ export function HtmlRenderDocument(props: {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
   };
   useEffect(postTheme, [theme]);
-  const open = useEffectEvent((url: string, _modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
-    void readLocalApi()?.shell.openExternal(url).catch((cause: unknown) => console.error(cause));
+  const openChangeRequestLink = useOpenChangeRequestLink(props.threadRef);
+  const openLink = useOpenLink(props.threadRef);
+  // Same rules as a chat link: a pull request opens in the right panel, any
+  // other link follows "Open links in", and Cmd/Ctrl-click goes to the system
+  // browser. Without a thread there is no panel, so it goes to the browser.
+  const open = useEffectEvent((url: string, modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
+    // The modifier's destination needs no saved setting, so it never waits on one.
+    if (hostIntegration()?.externalNavigation || modifiers.metaKey || modifiers.ctrlKey) {
+      void readLocalApi()
+        ?.shell.openExternal(url)
+        .catch((cause: unknown) => console.error(cause));
+      return;
+    }
+    if (
+      props.threadRef !== undefined &&
+      openChangeRequestLink(
+        { ...modifiers, preventDefault: () => undefined, stopPropagation: () => undefined },
+        url,
+        undefined,
+        props.threadRef.environmentId,
+      )
+    ) {
+      return;
+    }
+    void openLink(url, { event: modifiers }).catch((cause: unknown) => console.error(cause));
   });
   // The page cannot open windows itself (an inline page runs unopened, and
   // desktop sends any window to the browser). It asks the client, which opens
