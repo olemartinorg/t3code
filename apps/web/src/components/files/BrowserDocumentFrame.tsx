@@ -1,11 +1,15 @@
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   htmlRenderThemeFragment,
   htmlRenderThemeMessage,
   readHtmlRenderContentHeight,
+  readHtmlRenderLinkRequest,
+  htmlRenderResult,
 } from "@t3tools/shared/htmlRender";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
+import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 
 /**
@@ -30,6 +34,8 @@ export function BrowserDocumentFrame(props: {
   readonly title: string;
   readonly pdf: boolean;
   readonly htmlRender?: boolean;
+  /** The thread an HTML render's links open beside. */
+  readonly threadRef?: ScopedThreadRef | undefined;
 }) {
   const className = "min-h-0 flex-1 border-0 bg-white";
   return props.pdf ? (
@@ -45,6 +51,7 @@ export function BrowserDocumentFrame(props: {
       key={props.src}
       src={props.src}
       title={props.title}
+      threadRef={props.threadRef}
       className="min-h-0 flex-1"
     />
   ) : (
@@ -53,7 +60,7 @@ export function BrowserDocumentFrame(props: {
       src={props.src}
       title={props.title}
       className={className}
-      sandbox="allow-scripts allow-forms allow-popups"
+      sandbox="allow-scripts allow-forms allow-popups allow-downloads"
     />
   );
 }
@@ -68,6 +75,8 @@ export function HtmlRenderDocument(props: {
   readonly src: string;
   readonly title: string;
   readonly className?: string;
+  /** The thread the page's links open beside, as a chat link would. */
+  readonly threadRef?: ScopedThreadRef | undefined;
   /** Receives the page's content height whenever it changes, so an inline frame can fit it. */
   readonly onContentHeight?: (height: number) => void;
 }) {
@@ -79,6 +88,33 @@ export function HtmlRenderDocument(props: {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
   };
   useEffect(postTheme, [theme]);
+  const open = useEffectEvent((url: string, _modifiers: { metaKey: boolean; ctrlKey: boolean }) => {
+    void readLocalApi()?.shell.openExternal(url).catch((cause: unknown) => console.error(cause));
+  });
+  // The page cannot open windows itself (an inline page runs unopened, and
+  // desktop sends any window to the browser). It asks the client, which opens
+  // the link only while this frame has focus and the reader has just used the
+  // app. A page can take focus by script, so this stops opens on load, not a
+  // page that waits for the reader's next click or key.
+  useEffect(() => {
+    const openLink = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      const request = readHtmlRenderLinkRequest(event.data);
+      if (
+        request === undefined ||
+        frame === null ||
+        event.source !== frame.contentWindow ||
+        document.activeElement !== frame ||
+        navigator.userActivation?.isActive === false
+      ) {
+        return;
+      }
+      open(request.url, request);
+      frame.contentWindow?.postMessage(htmlRenderResult(request.id), "*");
+    };
+    window.addEventListener("message", openLink);
+    return () => window.removeEventListener("message", openLink);
+  }, []);
   const { onContentHeight } = props;
   // A page posts its height once per change, so listen from the commit that
   // inserts the frame; a passive effect could run after a fast page's first post.

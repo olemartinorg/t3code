@@ -30,7 +30,7 @@ it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })))("comp
         (run_id, thread_id, ordinal, provider, provider_instance_id, status, requested_at, completed_at, payload_json)
         VALUES ('native-run', 'v2', 1, 'codex', 'codex', 'completed',
           '2026-01-01T00:00:00.000Z', '2026-01-04T00:00:00.000Z', '{}')`;
-      assert.deepEqual(yield* runMigrations(), [[59, "ThreadCompletionWatermark"]]);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 59 }), [[59, "ThreadCompletionWatermark"]]);
       const rows = yield* sql<{ thread_id: string; payload_json: string; updated_at: string }>`
         SELECT thread_id, payload_json, updated_at FROM orchestration_v2_projection_threads ORDER BY thread_id
       `;
@@ -40,6 +40,18 @@ it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })))("comp
       assert.isNull(byId.get("explicit").lastCompletionAt);
       assert.equal(byId.get("explicit").lastVisitedAt, "2026-01-09T00:00:00.000Z");
       assert.isTrue(rows.every((row) => row.updated_at === "2026-01-02T00:00:00.000Z"));
+      // This is the populated schema already shipped by Sandbox, including its
+      // migration 59. The native runner must append main's changes without
+      // changing conversation payloads, completion watermarks or visits.
+      const before = yield* sql`SELECT * FROM orchestration_v2_projection_threads ORDER BY thread_id`;
+      const runsBefore = yield* sql`SELECT * FROM orchestration_v2_projection_runs ORDER BY run_id`;
+      assert.deepEqual(yield* runMigrations(), [
+        [60, "McpAppModelContext"],
+        [61, "ThreadSnapshotWindowIndexes"],
+        [62, "PullRequestReviewGuides"],
+      ]);
+      assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_projection_threads ORDER BY thread_id`, before);
+      assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_projection_runs ORDER BY run_id`, runsBefore);
       assert.deepEqual(yield* runMigrations(), []);
       const [importRuns] = yield* sql<{ count: number }>`SELECT count(*) AS count FROM orchestration_v2_projection_runs WHERE thread_id='v1'`;
       assert.equal(importRuns!.count, 0);

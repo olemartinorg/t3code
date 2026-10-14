@@ -2,9 +2,9 @@ import { ProjectId } from "@t3tools/contracts";
 import { useSettingsProjectGroups } from "../components/settings/useSettingsProjectGroups";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
@@ -66,6 +66,10 @@ function IndexDraftLanding() {
     ),
   );
   const sole = soleOpenConversation(threads, primaryEnvironmentId, selectedProjectId);
+  const router = useRouter();
+  // Read at effect time: this page stays mounted while a navigation away from
+  // "/" is still loading, but the router already points at the new location.
+  const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -83,7 +87,7 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (!bootstrapped || primaryEnvironmentId === null || startingRef.current) return;
+    if (!bootstrapped || primaryEnvironmentId === null || startingRef.current || !isStillOnIndex()) return;
     if (openIntent === "settings") {
       if (selectedProjectId === null) {
         startingRef.current = true;

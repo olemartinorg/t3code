@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   navigate: vi.fn(),
+  pathname: "/",
   newThread: vi.fn(),
   projects: [] as unknown[],
   threads: [] as unknown[],
@@ -17,6 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
     useRouteContext: () => ({ authGateState: { status: "authenticated" } }),
   }),
   useNavigate: () => state.navigate,
+  useRouter: () => ({ state: { location: { pathname: state.pathname } } }),
   Link: () => null,
 }));
 vi.mock("../state/entities", () => ({
@@ -65,6 +67,7 @@ const thread = {
 };
 
 beforeEach(() => {
+  state.pathname = "/";
   state.navigate.mockReset();
   state.newThread.mockReset().mockResolvedValue(null);
   state.projects = [{ id: "other-project", environmentId: "chosen-env" }, project];
@@ -181,5 +184,12 @@ test("No project Settings opens the native environment scope", async () => {
     search: { machine: "chosen-env" },
     replace: true,
   });
+  expect(state.newThread).not.toHaveBeenCalled();
+});
+
+ test("leaving the landing route cannot replace the chosen page with an embedded conversation", async () => {
+  state.pathname = "/settings/general";
+  await open();
+  expect(state.navigate).not.toHaveBeenCalled();
   expect(state.newThread).not.toHaveBeenCalled();
 });
