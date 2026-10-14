@@ -302,12 +302,43 @@ export function Home() {
             <Text style={{ color: "#fca5a5" }}>{phone.state.github.error}</Text>
           )}
           {phone.state.github?.prs.map((pr) => (
-            <Pressable key={pr.id} onPress={() => void Linking.openURL(pr.url).catch(failure)}>
-              <Text style={text}>
-                {pr.repository} #{pr.number} · {pr.title}
-                {pr.hidden ? " · hidden" : ""}
-              </Text>
-            </Pressable>
+            <View key={pr.id} style={{ gap: 6 }}>
+              <Pressable onPress={() => void Linking.openURL(pr.url).catch(failure)}>
+                <Text style={text}>
+                  {pr.repository} #{pr.number} · {pr.title}
+                  {pr.hidden ? " · hidden" : ""}
+                </Text>
+              </Pressable>
+              <Text style={text}>{phone.state.pullRequestViews[pr.id]?.subtitle}</Text>
+              {(phone.state.pullRequestViews[pr.id]?.taskNames.length ?? 0) > 0 && (
+                <Text style={text}>
+                  {phone.state.pullRequestViews[pr.id]?.taskNames.join(" · ")}
+                </Text>
+              )}
+              {phone.state.pullRequestViews[pr.id]?.errors.map((error, index) => (
+                <Text key={index} style={{ color: "#fca5a5" }}>
+                  {error}
+                </Text>
+              ))}
+              {phone.state.pullRequestViews[pr.id]?.visibility && (
+                <>
+                  <Button
+                    title={phone.state.pullRequestViews[pr.id]?.visibility?.label ?? "Visibility"}
+                    disabled={
+                      !phone.connected || !phone.state.pullRequestViews[pr.id]?.visibility?.enabled
+                    }
+                    onPress={() =>
+                      void phone.client?.setPullRequestHidden(pr.id, !pr.hidden).catch(failure)
+                    }
+                  />
+                  {phone.state.pullRequestViews[pr.id]?.visibility?.reason && (
+                    <Text style={text}>
+                      {phone.state.pullRequestViews[pr.id]?.visibility?.reason}
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
           ))}
         </>
       ) : (

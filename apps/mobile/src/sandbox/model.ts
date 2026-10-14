@@ -10,6 +10,7 @@ export type PhoneState = {
   history: PhoneTask[];
   historyPage: Extract<Scope, { topic: "tasks"; scope: "history" }>["data"]["page"];
   github: Extract<Scope, { topic: "github" }>["data"]["github"] | null;
+  pullRequestViews: Extract<Scope, { topic: "github" }>["data"]["pullRequestViews"];
   projects: Extract<Scope, { topic: "projects" }>["data"] | null;
   operations: Extract<Scope, { topic: "operations" }>["data"];
 };
@@ -18,6 +19,7 @@ export const emptyPhoneState = (): PhoneState => ({
   history: [],
   historyPage: null,
   github: null,
+  pullRequestViews: {},
   projects: null,
   operations: [],
 });
@@ -32,8 +34,10 @@ export function applyPhoneFrame(current: PhoneState, frame: Frame): PhoneState {
         next.history = scope.data.tasks;
         next.historyPage = scope.data.page;
       }
-    } else if (scope.topic === "github") next.github = scope.data.github;
-    else if (scope.topic === "projects") next.projects = scope.data;
+    } else if (scope.topic === "github") {
+      next.github = scope.data.github;
+      next.pullRequestViews = scope.data.pullRequestViews;
+    } else if (scope.topic === "projects") next.projects = scope.data;
     else if (scope.topic === "operations") next.operations = scope.data;
   }
   return next;
