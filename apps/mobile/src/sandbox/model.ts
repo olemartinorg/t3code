@@ -68,3 +68,25 @@ export function samePhoneTarget(left: PhoneTask, right: PhoneTask): boolean {
         left.environmentId === right.environmentId &&
         left.projectId === right.projectId;
 }
+
+/** Opening a native view follows admitted actions, independently of live provider activity. */
+export function phoneAgentAvailability(task: PhoneTask): {
+  open: boolean;
+  newConversation: boolean;
+  settings: boolean;
+} {
+  const actions = task.presentation.actions.flatMap((action) =>
+    action.kind === "compound" ? (action.enabled ? action.actions : []) : [action],
+  );
+  const enabled = (id: string) => actions.some((action) => action.id === id && action.enabled);
+  if (task.kind === "t3") {
+    const connected = task.connection === "connected";
+    return {
+      open: connected && enabled("open"),
+      newConversation: connected && task.projectId !== null && enabled("new-conversation"),
+      settings: connected && enabled("settings"),
+    };
+  }
+  const open = enabled("open");
+  return { open, newConversation: open, settings: open };
+}

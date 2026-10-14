@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { randomUUID } from "expo-crypto";
-import type { PhoneTask } from "./model";
+import { phoneAgentAvailability, type PhoneTask } from "./model";
 import { usePhone } from "./phone-context";
 
 type Action = PhoneTask["presentation"]["actions"][number];
@@ -123,6 +123,7 @@ function ActionControl({
 }
 function TaskCard({ task }: { task: PhoneTask }) {
   const phone = usePhone(),
+    availability = phoneAgentAvailability(task),
     failure = (cause: unknown) =>
       Alert.alert("Cannot open conversation", cause instanceof Error ? cause.message : "Reconnect");
   return (
@@ -154,20 +155,20 @@ function TaskCard({ task }: { task: PhoneTask }) {
         <Button
           key={conversation.id}
           title={`${conversation.unread ? "● " : ""}${conversation.title} · ${conversation.status}`}
-          disabled={!phone.connected || !task.presentation.running}
+          disabled={!phone.connected || !availability.open}
           onPress={() => void phone.open(task, conversation.id).catch(failure)}
         />
       ))}
-      {task.presentation.running && (
+      {(task.kind === "t3" || availability.open) && (
         <>
           <Button
             title="New conversation"
-            disabled={!phone.connected || (task.kind === "t3" && task.projectId === null)}
+            disabled={!phone.connected || !availability.newConversation}
             onPress={() => void phone.open(task, null, "new-conversation").catch(failure)}
           />
           <Button
             title="New-conversation settings"
-            disabled={!phone.connected}
+            disabled={!phone.connected || !availability.settings}
             onPress={() => void phone.open(task, null, "settings").catch(failure)}
           />
         </>
