@@ -195,3 +195,28 @@ test("native reconnect does not acknowledge a hidden conversation", async () => 
   await show(true);
   expect(state.visit).toHaveBeenCalledTimes(1);
 });
+
+test("an older failed attempt cannot clear a reconnected visit or undo sticky mark-unread", async () => {
+  visible = true;
+  let finishOldAttempt!: (value: unknown) => void;
+  state.visit.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishOldAttempt = resolve;
+    }),
+  );
+  await act(async () => {
+    renderer = create(<Reader value={thread} />);
+  });
+  expect(state.visit).toHaveBeenCalledTimes(1);
+  await connection("reconnecting");
+  await connection("connected");
+  expect(state.visit).toHaveBeenCalledTimes(2);
+  expect(state.visit.mock.calls[1]).toEqual(state.visit.mock.calls[0]);
+  await act(async () => {
+    finishOldAttempt(AsyncResult.failure(Cause.fail(new Error("Old session failed"))));
+  });
+  await act(async () =>
+    renderer!.update(<Reader value={{ ...thread, lastVisitedAt: "2026-10-07T11:59:59.999Z" }} />),
+  );
+  expect(state.visit).toHaveBeenCalledTimes(2);
+});

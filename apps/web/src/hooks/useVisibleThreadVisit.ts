@@ -23,12 +23,14 @@ export function useVisibleThreadVisit(
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
   const lastDispatchedVisitRef = useRef<string | null>(null);
+  const lastVisitAttemptRef = useRef<object | null>(null);
   const lastVisitDispatchAtRef = useRef(0);
   useEffect(() => {
     // Cached shells can render before the native environment registers its live session.
     // A visit is a command, so only the connected session may acknowledge that content.
     if (!hostPaneVisible || !connectionReady) {
       lastDispatchedVisitRef.current = null;
+      lastVisitAttemptRef.current = null;
       lastVisitDispatchAtRef.current = 0;
       return;
     }
@@ -61,6 +63,8 @@ export function useVisibleThreadVisit(
       const dispatchKey = `${routeThreadKey}:${visitedAt}`;
       if (lastDispatchedVisitRef.current === dispatchKey) return;
       const dispatch = () => {
+        const attempt = {};
+        lastVisitAttemptRef.current = attempt;
         lastDispatchedVisitRef.current = dispatchKey;
         lastVisitDispatchAtRef.current = Date.now();
         void visitThreadMutation({
@@ -69,7 +73,8 @@ export function useVisibleThreadVisit(
         }).then((result) => {
           // A failed command did not acknowledge the transcript. Leave this watermark
           // eligible when native connection readiness or foreground visibility returns.
-          if (result._tag === "Failure" && lastDispatchedVisitRef.current === dispatchKey) {
+          if (result._tag === "Failure" && lastVisitAttemptRef.current === attempt) {
+            lastVisitAttemptRef.current = null;
             lastDispatchedVisitRef.current = null;
             lastVisitDispatchAtRef.current = 0;
           }
