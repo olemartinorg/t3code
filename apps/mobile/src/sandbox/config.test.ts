@@ -35,3 +35,26 @@ test("Sandbox APK has independent identity, no cloud/OTA configuration and norma
   expect(config.owner).toBeUndefined();
   expect(config.plugins).toEqual(["expo-asset", "./plugins/withSandboxAndroid.cjs"]);
 });
+
+test("companion keeps Android 36 target while retaining stock compile tools and vendor rules", () => {
+  const config = sandboxAndroidConfig({
+    name: "T3",
+    slug: "t3",
+    plugins: [
+      [
+        "expo-build-properties",
+        { android: { compileSdkVersion: 37, extraProguardRules: "owned-vendor-rule" } },
+      ],
+    ],
+  });
+  expect(config.plugins?.[0]).toEqual([
+    "expo-build-properties",
+    {
+      android: {
+        compileSdkVersion: 37,
+        targetSdkVersion: 36,
+        extraProguardRules: "owned-vendor-rule",
+      },
+    },
+  ]);
+});

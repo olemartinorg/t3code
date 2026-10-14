@@ -14,12 +14,17 @@ export function sandboxAndroidConfig(base: ExpoConfig): ExpoConfig {
   const plugins = (base.plugins ?? [])
     .filter((plugin) => !excluded.has(typeof plugin === "string" ? plugin : (plugin[0] ?? "")))
     .map((plugin) =>
-      Array.isArray(plugin) && plugin[0] === "expo-sharing"
-        ? (["expo-sharing", { ...plugin[1], ios: { enabled: false } }] as [
-            string,
-            Record<string, unknown>,
-          ])
-        : plugin,
+      Array.isArray(plugin) && plugin[0] === "expo-build-properties"
+        ? ([
+            "expo-build-properties",
+            { ...plugin[1], android: { ...plugin[1]?.android, targetSdkVersion: 36 } },
+          ] as [string, Record<string, unknown>])
+        : Array.isArray(plugin) && plugin[0] === "expo-sharing"
+          ? (["expo-sharing", { ...plugin[1], ios: { enabled: false } }] as [
+              string,
+              Record<string, unknown>,
+            ])
+          : plugin,
     );
   return {
     ...base,
