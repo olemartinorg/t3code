@@ -1413,11 +1413,28 @@ function secretRequestAsPendingInput(
   };
 }
 
-export function pendingQuestionsFromProjection(projection: Pick<OrchestrationV2ThreadProjection, "runtimeRequests" | "turnItems">): OrchestrationV2ThreadShell["pendingQuestions"] {
-  return projection.runtimeRequests.filter(request => request.kind === "user_input" && request.status === "pending" &&
-    projection.turnItems.some(item => item.type === "user_input_request" && item.requestId === request.id))
-    .map(request => ({ id: request.id, createdAt: request.createdAt, responseCapability: request.responseCapability.type }))
-    .toSorted((left, right) => DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+export function pendingQuestionsFromProjection(
+  projection: Pick<OrchestrationV2ThreadProjection, "runtimeRequests" | "turnItems">,
+): NonNullable<OrchestrationV2ThreadShell["pendingQuestions"]> {
+  return projection.runtimeRequests
+    .filter(
+      (request) =>
+        request.kind === "user_input" &&
+        request.status === "pending" &&
+        projection.turnItems.some(
+          (item) => item.type === "user_input_request" && item.requestId === request.id,
+        ),
+    )
+    .map((request) => ({
+      id: request.id,
+      createdAt: request.createdAt,
+      responseCapability: request.responseCapability.type,
+    }))
+    .toSorted(
+      (left, right) =>
+        DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) ||
+        (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+    );
 }
 
 export function threadShellFromProjection(
@@ -1634,7 +1651,7 @@ type ShellThreadState = {
   readonly lastErrorClass: OrchestrationV2ThreadShell["lastErrorClass"];
   readonly usageLimitResetAt: OrchestrationV2ThreadShell["usageLimitResetAt"];
   readonly pendingRuntimeRequest: OrchestrationV2ThreadProjection["runtimeRequests"][number] | null;
-  readonly pendingQuestions: OrchestrationV2ThreadShell["pendingQuestions"];
+  readonly pendingQuestions: NonNullable<OrchestrationV2ThreadShell["pendingQuestions"]>;
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
   readonly hasActionableProposedPlan: boolean;
@@ -1968,6 +1985,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   "$.restartCancelledBackgroundWork",
                 )}
             `;
+            const completedAt = nullableStringField(payload, "completedAt");
+            if (completedAt !== null) {
+              yield* sql`
+                UPDATE orchestration_v2_projection_threads
+                SET payload_json = json_set(payload_json, '$.lastCompletionAt', ${completedAt})
+                WHERE thread_id = ${event.threadId}
+                  AND (json_extract(payload_json, '$.lastCompletionAt') IS NULL
+                    OR json_extract(payload_json, '$.lastCompletionAt') < ${completedAt})
+              `;
+            }
             break;
           }
           case "run.background-work-cancelled": {
@@ -2714,11 +2741,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           const row = rows[0];
           if (row !== undefined) {
             const thread = yield* decodeThreadPayload(row.payload_json);
-            const updatedThread = {
-              ...thread,
-              lastCompletionAt: completionWatermark(thread, event),
-              updatedAt: event.occurredAt,
-            };
+            const updatedThread = { ...thread, updatedAt: event.occurredAt };
             const payloadJson = yield* encodeThreadPayload(updatedThread);
             yield* sql`
               UPDATE orchestration_v2_projection_threads
@@ -5772,7 +5795,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.last_error,
           ),
           pendingRuntimeRequest,
-          pendingQuestions: yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(OrchestrationV2PendingQuestionSummaryJson)))(row.pending_questions_json),
+          pendingQuestions: yield* Schema.decodeUnknownEffect(
+            Schema.fromJsonString(Schema.Array(OrchestrationV2PendingQuestionSummaryJson)),
+          )(row.pending_questions_json),
           latestUserMessageAt:
             row.latest_user_message_at === null
               ? null

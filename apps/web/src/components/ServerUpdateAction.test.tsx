@@ -296,7 +296,7 @@ describe("ServerUpdateAction", () => {
     });
   });
 
-  it("omits continuation when the saved preference is false", async () => {
+  it("leaves thread continuation off by default", async () => {
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
     );
@@ -408,17 +408,6 @@ describe("ServerUpdatesAction", () => {
       "Laptop updated",
       "Office updated",
     ]);
-  });
-
-  it("uses native capabilities independently of a host's presentation notice", async () => {
-    vi.stubGlobal("window", { t3Host: { updateNotice: () => "Informational host notice" } });
-    testState.updateServer.mockResolvedValue(success);
-    const button = await mount();
-    await act(async () => {
-      button.props.onClick();
-    });
-    expect(testState.updateServer).toHaveBeenCalledTimes(2);
-    expect(testState.updateServer.mock.calls[1][0].input).toEqual({ targetVersion: "0.0.31" });
   });
 
   it("names a failed machine while letting the other machine complete", async () => {

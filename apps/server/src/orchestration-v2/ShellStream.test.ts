@@ -6,7 +6,7 @@ import type {
   OrchestrationV2StoredEvent,
   OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import { ProjectId, ProviderInstanceId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -570,7 +570,7 @@ describe("skipUnchangedThreadShells", () => {
     visibleItemCount: 1,
     branch: null,
     status: "running",
-    pendingRuntimeRequest: null, pendingQuestions: [],
+    pendingRuntimeRequest: null,
     pendingBackgroundTasks: [],
     latestRunId: null,
     latestUserMessageAt: null,
@@ -603,26 +603,6 @@ describe("skipUnchangedThreadShells", () => {
       Stream.runCollect,
       Effect.map((items) => Array.from(items, (item) => ("sequence" in item ? item.sequence : -1))),
     );
-
-  it.effect("delivers every question identity and capability change without replaying metadata-only edits", () =>
-    Effect.gen(function* () {
-      const first = { id: RuntimeRequestId.make("question-one"), createdAt: at(1), responseCapability: "message" as const };
-      const second = { id: RuntimeRequestId.make("question-two"), createdAt: at(2), responseCapability: "live" as const };
-      const sent = yield* run([
-        updated(1, shell("a")),
-        updated(2, shell("a", { pendingQuestions: [first] })),
-        updated(3, shell("a", { pendingQuestions: [first], updatedAt: at(100) })),
-        updated(4, shell("a", { pendingQuestions: [first, second] })),
-        updated(5, shell("a", { pendingQuestions: [first, { ...second, responseCapability: "not_resumable" }] })),
-        updated(6, shell("a", { pendingQuestions: [first] })),
-        updated(7, shell("a", { pendingQuestions: [] })),
-      ]);
-      expect(sent).toEqual([1, 2, 4, 5, 6, 7]);
-      const initial = { ...emptyShellSnapshot, threads: [shell("a", { pendingQuestions: [first, second] })] };
-      expect(shellStreamItemsFromInitialSnapshot({ snapshot: initial, resolvedRepositoryIdentityRoots: [] }))
-        .toEqual([{ kind: "snapshot", snapshot: initial }]);
-    }),
-  );
 
   it.effect("drops shells that only moved updatedAt, and resends them after a while", () =>
     Effect.gen(function* () {

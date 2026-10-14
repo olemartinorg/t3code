@@ -978,7 +978,7 @@ export function PreviewView({
         onForward={handleForward}
         onRefresh={handleRefresh}
         onSubmit={(next) => void handleSubmitUrl(next)}
-        externalBrowserUrl={tabId ? url : undefined}
+        onOpenInBrowser={tabId ? handleOpenInBrowser : undefined}
         // Capture, annotation, and the more menu drive the desktop webview, so
         // server tabs leave them out. Floating works for both.
         onCapture={previewBridge && tabId && !isServerTab ? handleCapture : undefined}

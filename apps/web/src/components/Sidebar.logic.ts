@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
@@ -772,10 +773,17 @@ export function resolveThreadLastVisitedAt(
 }
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
-  if (!thread.lastCompletionAt) return false;
-  const completedAt = Date.parse(thread.lastCompletionAt);
+  if (hostIntegration()?.useThreadVisit) {
+    const completedAt = Date.parse(thread.lastCompletionAt ?? "");
+    return (
+      !Number.isNaN(completedAt) &&
+      (!thread.lastVisitedAt || Date.parse(thread.lastVisitedAt) < completedAt)
+    );
+  }
+  if (!thread.latestRun?.completedAt) return false;
+  const completedAt = Date.parse(thread.latestRun.completedAt);
   if (Number.isNaN(completedAt)) return false;
-  if (!thread.lastVisitedAt) return true;
+  if (!thread.lastVisitedAt) return false;
 
   const lastVisitedAt = Date.parse(thread.lastVisitedAt);
   if (Number.isNaN(lastVisitedAt)) return true;

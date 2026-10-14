@@ -75,8 +75,6 @@ const SHELL_SNAPSHOT: OrchestrationV2ShellSnapshot = {
       activeRunId: null,
       status: "idle",
       pendingRuntimeRequest: null,
-      pendingQuestions: [],
-      latestRunCompletedAt: null,
       latestVisibleMessage: null,
       latestUserMessageAt: NOW,
       activityRunStartedAt: NOW,

@@ -1,10 +1,6 @@
 import { hostIntegration } from "./hostIntegration";
-import {
-  ClientSettingsSchema,
-  type ConfirmDialogOptions,
-  type ContextMenuItem,
-  type LocalApi,
-} from "@t3tools/contracts";
+import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import { ClientSettingsSchema } from "@t3tools/contracts";
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";

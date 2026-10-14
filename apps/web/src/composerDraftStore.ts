@@ -88,11 +88,7 @@ const isThreadContextRecord = Schema.is(ThreadContextRecord);
 const isSnapShotSource = Schema.is(SnapShotSource);
 const isPreviewAnnotationPayload = Schema.is(PreviewAnnotationPayloadSchema);
 
-import {
-  COMPOSER_DRAFT_STORAGE_KEY,
-  persistedComposerDraftHasUserContent,
-} from "./composerDraftPersistence";
-export { COMPOSER_DRAFT_STORAGE_KEY } from "./composerDraftPersistence";
+export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 9;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
@@ -2137,6 +2133,18 @@ function normalizePersistedDraftsByThreadId(
   }
 
   return nextDraftsByThreadKey;
+}
+
+function persistedComposerDraftHasUserContent(draft: PersistedComposerThreadDraftState): boolean {
+  return (
+    draft.prompt.trim().length > 0 ||
+    draft.attachments.length > 0 ||
+    (draft.files?.length ?? 0) > 0 ||
+    (draft.terminalContexts?.length ?? 0) > 0 ||
+    (draft.previewAnnotations?.length ?? 0) > 0 ||
+    (draft.reviewComments?.length ?? 0) > 0 ||
+    (draft.threadContexts?.length ?? 0) > 0
+  );
 }
 
 function stripLegacyModelSeedsFromEmptyDraftSessions(

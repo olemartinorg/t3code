@@ -10,7 +10,7 @@ export function ChatGptUsageButton(props: Omit<ComponentProps<typeof Button>, "o
       variant="ghost-muted"
       size="sm"
       {...props}
-      render={<a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" />}
+      onClick={() => void ensureLocalApi().shell.openExternal(CHATGPT_USAGE_URL)}
     >
       Manage usage
       <ExternalLinkIcon className="size-3.5" aria-hidden="true" />

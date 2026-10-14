@@ -71,7 +71,7 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
     linkedPullRequest: null,
     status: "running",
     activityRunStatus: null,
-    pendingRuntimeRequest: null, pendingQuestions: [],
+    pendingRuntimeRequest: null,
     pendingBackgroundTasks: [],
     latestRunId: null,
     latestRunRequestedAt: null,

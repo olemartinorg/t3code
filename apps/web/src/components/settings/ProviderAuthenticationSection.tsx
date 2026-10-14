@@ -53,7 +53,6 @@ export function ProviderAuthenticationSection({
   const [draft, setDraft] = useState({ id: "", values: {} as Record<string, string> });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [acceptedBrowserConsent, setAcceptedBrowserConsent] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const terminalQueue = useRef<ProviderAuthRespondInput[]>([]);
   const terminalSending = useRef(false);
@@ -134,12 +133,26 @@ export function ProviderAuthenticationSection({
     );
   }
 
-  const requiresBrowserConsent = interaction?.type === "browser" && interaction.requiresConsent;
-  const browserConsentAccepted = acceptedBrowserConsent === draftId;
-  async function acceptBrowserConsent() {
-    if (readOnly || !requiresBrowserConsent || !url) return;
-    const acceptedId = draftId;
-    if (await send({ type: "browser", action: "accept" })) setAcceptedBrowserConsent(acceptedId);
+  async function openBrowser() {
+    if (!url || readOnly) return;
+    const requiresConsent = interaction?.type === "browser" && interaction.requiresConsent;
+    // Browsers block tabs opened after an await, so the web build reserves one
+    // while the environment records consent.
+    const pending = requiresConsent && !window.desktopBridge ? window.open("", "_blank") : null;
+    if (pending) pending.opener = null;
+    try {
+      // Consent is checked on the environment before opening a provider URL locally.
+      if (requiresConsent && !(await send({ type: "browser", action: "accept" }))) {
+        pending?.close();
+        return;
+      }
+      if (pending) pending.location.href = url;
+      else await ensureLocalApi().shell.openExternal(url);
+      setError(null);
+    } catch {
+      pending?.close();
+      setError("Could not open the sign-in page. Copy the link and open it in your browser.");
+    }
   }
 
   function updateDraft(name: string, value: string) {
@@ -199,17 +212,14 @@ export function ProviderAuthenticationSection({
           ) : null}
           {url ? (
             <>
-              {requiresBrowserConsent && !browserConsentAccepted ? (
-                <Button size="sm" variant="outline" disabled={disabled}
-                  onClick={() => void acceptBrowserConsent()}>
-                  Allow browser sign-in
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" disabled={disabled}
-                  render={<a href={disabled ? undefined : url} target="_blank" rel="noopener noreferrer" />}>
-                  Open browser
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                onClick={() => void openBrowser()}
+              >
+                Open browser
+              </Button>
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -217,10 +227,16 @@ export function ProviderAuthenticationSection({
                       aria-label="Copy sign-in link"
                       size="icon-sm"
                       variant="ghost-muted"
-                      disabled={disabled || (requiresBrowserConsent && !browserConsentAccepted)}
+                      disabled={disabled}
                       onClick={() => {
-                        void writeTextToClipboard(url, "Provider sign-in link")
-                          .catch(() => setError("Could not copy the sign-in link."));
+                        // Copy inside the click so the clipboard keeps the user
+                        // activation; the link only works once consent is recorded.
+                        const copied = writeTextToClipboard(url, "Provider sign-in link");
+                        void (async () => {
+                          await copied;
+                          if (interaction?.type === "browser" && interaction.requiresConsent)
+                            await send({ type: "browser", action: "accept" });
+                        })().catch(() => setError("Could not copy the sign-in link."));
                       }}
                     >
                       <CopyIcon />
@@ -237,7 +253,7 @@ export function ProviderAuthenticationSection({
                 size="sm"
                 variant="outline"
                 render={
-                  <a href={provider.setup.documentationUrl} target="_blank" rel="noopener noreferrer" />
+                  <a href={provider.setup.documentationUrl} target="_blank" rel="noreferrer" />
                 }
               >
                 Open docs

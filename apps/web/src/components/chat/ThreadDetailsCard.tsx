@@ -83,12 +83,8 @@ export function ThreadDetailsCard({
   useLayoutEffect(() => () => reportDetailsCard?.(null), [reportDetailsCard]);
   useLayoutEffect(() => {
     onPresentationChange(mode);
-    if (mode === "inline" && popoverOpen) {
-      // The user opened the summary before its canvas gained room for a card.
-      // Keep that choice when embedding expands the pane around the panel.
-      useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", true);
+    if (mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
-    }
   }, [mode, onPresentationChange, threadRef, popoverOpen]);
   useLayoutEffect(() => {
     const element = contentElement;

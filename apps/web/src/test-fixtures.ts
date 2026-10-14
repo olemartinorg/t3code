@@ -118,7 +118,6 @@ export function makeThreadFixture(overrides: ThreadFixtureOverrides = {}): Threa
     activeRunId: overrides.runtime?.activeRunId ?? null,
     status: overrides.runtime?.status ?? "idle",
     pendingRuntimeRequest: null,
-    pendingQuestions: [],
     latestVisibleMessage: null,
     latestUserMessageAt:
       overrides.latestUserMessageAt === null || overrides.latestUserMessageAt === undefined

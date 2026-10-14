@@ -59,7 +59,7 @@ it.effect.each(["on time", "after restart"])(
         status: "failed",
         lastErrorClass: "usage_limit",
         usageLimitResetAt: resetAt,
-        pendingRuntimeRequest: null, pendingQuestions: [],
+        pendingRuntimeRequest: null,
         latestVisibleMessage: null,
         latestUserMessageAt: now,
         hasActionableProposedPlan: false,

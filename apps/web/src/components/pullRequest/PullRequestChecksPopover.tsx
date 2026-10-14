@@ -90,13 +90,19 @@ function ChecksBody({
                 {pullRequestCheckStatusLabel(check)}
               </span>
               {check.url === null ? null : (
-                <a
-                  
+                <button
+                  type="button"
                   className="shrink-0 text-primary hover:underline"
-                  href={check.url} target="_blank" rel="noopener noreferrer"
+                  onClick={() => {
+                    if (!check.url) return;
+                    void openLink(check.url).catch((error: unknown) => {
+                      console.error(error);
+                      toastManager.add({ type: "error", title: "Unable to open check details" });
+                    });
+                  }}
                 >
                   Details
-                </a>
+                </button>
               )}
             </li>
           ))}

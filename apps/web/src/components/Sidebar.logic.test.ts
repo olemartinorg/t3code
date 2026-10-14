@@ -511,14 +511,13 @@ describe("hasUnseenCompletion", () => {
         hasPendingUserInput: false,
         interactionMode: "default",
         latestRun: makeLatestRun(),
-        lastCompletionAt: "2026-03-09T10:05:00.000Z",
         lastVisitedAt: "2026-03-09T10:04:00.000Z",
         runtime: null,
       }),
     ).toBe(true);
   });
 
-  it("treats an unvisited completion as unread", () => {
+  it("treats a missing client visit marker as read", () => {
     expect(
       hasUnseenCompletion({
         hasActionableProposedPlan: false,
@@ -526,25 +525,10 @@ describe("hasUnseenCompletion", () => {
         hasPendingUserInput: false,
         interactionMode: "default",
         latestRun: makeLatestRun(),
-        lastCompletionAt: "2026-03-09T10:05:00.000Z",
         lastVisitedAt: undefined,
         runtime: null,
       }),
-    ).toBe(true);
-  });
-  it("keeps imported completion unread without a V2 run", () => {
-    expect(hasUnseenCompletion({
-      hasActionableProposedPlan: false, hasPendingApprovals: false,
-      hasPendingUserInput: false, interactionMode: "default", runtime: null,
-      latestRun: null, lastCompletionAt: "2026-03-09T10:05:00.000Z", lastVisitedAt: null,
-    })).toBe(true);
-  });
-  it("does not infer completion from an edited message or unfinished run", () => {
-    expect(hasUnseenCompletion({
-      hasActionableProposedPlan: false, hasPendingApprovals: false,
-      hasPendingUserInput: false, interactionMode: "default", runtime: null,
-      latestRun: makeLatestRun(), lastCompletionAt: null, lastVisitedAt: null,
-    })).toBe(false);
+    ).toBe(false);
   });
 });
 
@@ -1355,7 +1339,7 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Plan Ready", pulse: false });
   });
 
-  it("does not manufacture completed state without a native completion watermark", () => {
+  it("does not manufacture completed state without a client visit marker", () => {
     expect(
       resolveThreadStatusPill({
         thread: {
@@ -1378,7 +1362,6 @@ describe("resolveThreadStatusPill", () => {
           ...baseThread,
           interactionMode: "default",
           latestRun: makeLatestRun(),
-          lastCompletionAt: "2026-03-09T10:05:00.000Z",
           lastVisitedAt: "2026-03-09T10:04:00.000Z",
           runtime: {
             ...baseThread.runtime,
@@ -2121,7 +2104,6 @@ describe("unseen completion with background work", () => {
       latestRunId: RunId.make("run-background-completion"),
       status: "completed",
       latestRunCompletedAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
-      lastCompletionAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
       lastVisitedAt: DateTime.makeUnsafe("2026-06-20T00:59:00.000Z"),
       pendingBackgroundTasks: [{ taskId: "background-work", kind: expected.kind }],
     });

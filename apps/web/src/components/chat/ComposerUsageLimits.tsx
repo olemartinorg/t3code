@@ -110,7 +110,7 @@ function UsageLimitsBannerBody({
                   size="sm"
                   variant="link"
                   className="self-start"
-                  render={<a href={externalUsage.url} target="_blank" rel="noopener noreferrer" />}
+                  onClick={() => void ensureLocalApi().shell.openExternal(externalUsage.url)}
                 >
                   Manage usage
                 </Button>

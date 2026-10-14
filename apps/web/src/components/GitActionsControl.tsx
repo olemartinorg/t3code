@@ -1,4 +1,3 @@
-import { hostIntegration } from "../hostIntegration";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -22,16 +21,7 @@ import type {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import {
-  type MouseEvent,
-  type ReactElement,
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   CheckIcon,
@@ -941,13 +931,9 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  render={
-                    <a
-                      href={publishResult.repository.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
-                  }
+                  onClick={() => {
+                    void openLink(publishResult.repository.url).catch(() => undefined);
+                  }}
                 >
                   Open on {publishProviderLabel}
                 </Button>
@@ -1372,7 +1358,6 @@ export default function GitActionsControl({
       let toastActionProps: {
         children: string;
         onClick: (event: MouseEvent<HTMLButtonElement>) => void;
-        render?: ReactElement;
       } | null = null;
       if (toastCta.kind === "run_action") {
         toastActionProps = {
@@ -1387,12 +1372,9 @@ export default function GitActionsControl({
       } else if (toastCta.kind === "open_pr") {
         toastActionProps = {
           children: toastCta.label,
-          ...(hostIntegration()?.externalNavigation
-            ? { render: <a href={toastCta.url} target="_blank" rel="noopener noreferrer" /> }
-            : {}),
           onClick: (event) => {
             closeResultToast();
-            if (!hostIntegration()?.externalNavigation) openPrLink(event, toastCta.url);
+            openPrLink(event, toastCta.url);
           },
         };
       }

@@ -9,6 +9,18 @@ import { toastManager } from "./ui/toast";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
+export async function openDesktopUpdateReleaseNotes(
+  shell: DesktopUpdateShell | undefined,
+  releaseUrl: string,
+): Promise<void> {
+  try {
+    if (shell && (await shell.openExternal(releaseUrl))) return;
+  } catch {
+    // Surface rejected IPC calls through the same user-visible fallback.
+  }
+  toastManager.add({ type: "error", title: "Unable to open release notes" });
+}
+
 function ReleaseNotesLink({
   shell,
   releaseUrl,
@@ -17,11 +29,12 @@ function ReleaseNotesLink({
   releaseUrl: string;
 }) {
   return (
-    <a
+    <button
       className="ml-2 inline cursor-pointer text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground"
-      href={releaseUrl}
-      target="_blank"
-      rel="noopener noreferrer"
+      onClick={() => {
+        void openDesktopUpdateReleaseNotes(shell, releaseUrl);
+      }}
+      type="button"
     >
       Read more
       <ArrowRightIcon
@@ -29,7 +42,7 @@ function ReleaseNotesLink({
         className="ml-1 inline size-3 -rotate-45 align-[-0.125em]"
         strokeWidth={2.25}
       />
-    </a>
+    </button>
   );
 }
 

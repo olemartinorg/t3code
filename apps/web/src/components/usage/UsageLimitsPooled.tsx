@@ -625,7 +625,7 @@ export function UsageLimitsPooled({
           <Button
             variant="ghost-muted"
             size="xs"
-            render={<a href={link.url} target="_blank" rel="noopener noreferrer" />}
+            onClick={() => void ensureLocalApi().shell.openExternal(link.url)}
           >
             Manage usage
             <ExternalLinkIcon className="size-3.5" aria-hidden="true" />

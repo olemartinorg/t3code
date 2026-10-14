@@ -64,7 +64,6 @@ import {
   shouldRenderPreviewMiniPlayer,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
-  buildLocalDraftThread,
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
   deriveCommittedServerUserMessageIds,
@@ -2180,17 +2179,4 @@ describe("waitForRevertedMessage", () => {
     await settled;
     vi.useRealTimers();
   });
-});
-
-
-it("local unsent drafts have an explicitly empty native pending question set", () => {
-  const threadId = ThreadId.make("question-empty-draft");
-  const thread = buildLocalDraftThread(threadId, {
-    threadId, environmentId, projectId: ProjectId.make("question-project"), logicalProjectKey: "question-project",
-    createdAt: "2026-10-13T18:00:00.000Z", runtimeMode: "full-access", interactionMode: "default",
-    branch: null, worktreePath: null, envMode: "local", startFromOrigin: false,
-  }, { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" });
-  expect(thread.source.pendingQuestions).toEqual([]);
-  expect(thread.source.pendingRuntimeRequest).toBeNull();
-  expect(thread.runtime).toBeNull();
 });

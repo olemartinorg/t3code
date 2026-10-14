@@ -14,26 +14,6 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
-  it("distinguishes fork contracts from an upstream server without inventing a default", () => {
-    expect(decodeDescriptor(descriptor).capabilities.clientIntegrationVersion).toBeUndefined();
-    for (const version of [1, 2]) {
-      expect(
-        decodeDescriptor({
-          ...descriptor,
-          capabilities: { ...descriptor.capabilities, clientIntegrationVersion: version },
-        }).capabilities.clientIntegrationVersion,
-      ).toBe(version);
-    }
-    for (const version of [0, -1, 1.5, "1"]) {
-      expect(() =>
-        decodeDescriptor({
-          ...descriptor,
-          capabilities: { ...descriptor.capabilities, clientIntegrationVersion: version },
-        }),
-      ).toThrow();
-    }
-  });
-
   it("decodes old, recognized and future manual installation descriptors", () => {
     expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
     for (const installation of [{ kind: "npx" }, { kind: "npm-global", prefix: "/opt/node" }]) {

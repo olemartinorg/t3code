@@ -525,6 +525,7 @@ function ManagedCodexSetup({
         const receive = window.desktopBridge?.receiveProviderAuthCallback;
         if (receive && clientCallback && flowId) {
           if (receivingCallback.current === authorizationUrl) {
+            await ensureLocalApi().shell.openExternal(authorizationUrl);
             return;
           }
           receivingCallback.current = authorizationUrl;
@@ -534,8 +535,9 @@ function ManagedCodexSetup({
           await run(() =>
             completeAuth({ environmentId, input: { instanceId, flowId, callbackUrl } }),
           );
+        } else {
+          await ensureLocalApi().shell.openExternal(authorizationUrl);
         }
-        // Embedded/browser clients expose the URL as an ordinary anchor below.
       } catch {
         setError(
           "Could not finish sign-in on this computer. Try again or paste the redirect URL below.",
@@ -564,7 +566,7 @@ function ManagedCodexSetup({
       return;
     openedFlow.current = auth.flowId;
     openRequested.current = false;
-    if (!remoteWeb && window.desktopBridge?.receiveProviderAuthCallback) void openPage(url);
+    if (!remoteWeb) void openPage(url);
   }, [auth?.phase, auth?.flowId, url, openPage, remoteWeb]);
 
   const runtimeDescription =
@@ -629,12 +631,10 @@ function ManagedCodexSetup({
           ? pending || !transferFailed
           : !url || auth?.phase !== "waiting"
       }
-      render={url && auth?.phase === "waiting" && handoffQuery.data?.phase !== "finished" && !window.desktopBridge?.receiveProviderAuthCallback
-        ? <a href={url} target="_blank" rel="noopener noreferrer" /> : undefined}
       onClick={() => {
         if (handoffQuery.data?.phase === "finished")
           void transferProfile(handoffQuery.data.profile);
-        else if (url && window.desktopBridge?.receiveProviderAuthCallback) void openPage(url);
+        else if (url) void openPage(url);
       }}
     >
       {finishingSignIn
@@ -700,7 +700,7 @@ function ManagedCodexSetup({
             <Button
               size="xs"
               variant="ghost-muted"
-              render={<a href={url} target="_blank" rel="noopener noreferrer" />}
+              onClick={() => void ensureLocalApi().shell.openExternal(url)}
             >
               Try sign-in in your browser
               <ExternalLinkIcon className="size-3.5" />
@@ -710,7 +710,7 @@ function ManagedCodexSetup({
         {handoffUrl ? (
           <details>
             <summary className="cursor-pointer">Other ways to connect</summary>
-            <Button className="mt-2" size="sm" variant="outline" render={<a href={handoffUrl} target="_blank" rel="noopener noreferrer" />}>
+            <Button className="mt-2" size="sm" variant="outline" render={<a href={handoffUrl} />}>
               Use T3 desktop for automatic return
             </Button>
           </details>

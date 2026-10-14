@@ -4,17 +4,11 @@ import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
-  openPr: false,
-  openedPr: vi.fn(),
   actions: [] as {
     scope: { environmentId: string | null; cwd: string | null };
     input: { threadId?: string; action: string };
   }[],
-  toasts: [] as {
-    type?: string;
-    description?: string;
-    actionProps?: { onClick: (event?: unknown) => void; render?: { props: { href: string } } };
-  }[],
+  toasts: [] as { type?: string; description?: string; actionProps?: { onClick: () => void } }[],
   scopes: new Set<string>(),
   primaryScopes: new Set<string>(),
 }));
@@ -88,13 +82,11 @@ vi.mock("~/lib/sourceControlActions", () => ({
           toast: {
             title: "Committed",
             description: "Committed",
-            cta: state.openPr
-              ? { kind: "open_pr", label: "Open PR", url: "https://example.test/pull/1" }
-              : {
-                  kind: "run_action",
-                  label: "Push & create PR",
-                  action: { kind: "commit_push_pr" },
-                },
+            cta: {
+              kind: "run_action",
+              label: "Push & create PR",
+              action: { kind: "commit_push_pr" },
+            },
           },
         },
       };
@@ -104,14 +96,14 @@ vi.mock("~/lib/sourceControlActions", () => ({
 vi.mock("~/lib/utils", () => ({ cn: () => "", randomUUID: () => "action" }));
 vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => () => {} }));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => () => {} }));
-vi.mock("~/lib/openPullRequestLink", () => ({ useOpenPrLink: () => state.openedPr }));
+vi.mock("~/lib/openPullRequestLink", () => ({ useOpenPrLink: () => () => {} }));
 vi.mock("~/components/ui/toast", () => ({
   stackedThreadToast: (input: unknown) => input,
   toastManager: {
     add: (input: {
       type?: string;
       description?: string;
-      actionProps?: { onClick: (event?: unknown) => void; render?: { props: { href: string } } };
+      actionProps?: { onClick: () => void };
     }) => {
       state.toasts.push(input);
       return "toast";
@@ -199,9 +191,6 @@ beforeEach(() => {
   state.primaryScopes = new Set([AuthSourceControlWriteScope]);
   state.actions = [];
   state.toasts = [];
-  state.openPr = false;
-  state.openedPr.mockClear();
-  delete window.t3Host;
 });
 
 afterEach(async () => {
@@ -226,24 +215,6 @@ describe("Git action targets across thread navigation", () => {
       scope: { cwd: "/first" },
       input: { threadId: "first", action: "commit_push_pr" },
     });
-  });
-
-  it.each([false, true])("routes PR toast clicks with externalNavigation=%s", async (external) => {
-    if (external) window.t3Host = { externalNavigation: true };
-    state.openPr = true;
-    const renderer = await renderActions("first", "/first");
-    await clickQuickAction(renderer);
-    const action = state.toasts.find((toast) => toast.actionProps)?.actionProps;
-    expect(action).toBeDefined();
-    const event = {};
-    await act(async () => action!.onClick(event));
-    if (external) {
-      expect(action!.render?.props.href).toBe("https://example.test/pull/1");
-      expect(state.openedPr).not.toHaveBeenCalled();
-    } else {
-      expect(action!.render).toBeUndefined();
-      expect(state.openedPr).toHaveBeenCalledWith(event, "https://example.test/pull/1");
-    }
   });
 
   it("runs the memoized panel button in the current thread after navigation", async () => {

@@ -831,10 +831,10 @@ export function PullRequestSummaryTab({
                 key={`${index}:${check.name}:${check.url ?? ""}`}
                 className="group flex items-center gap-2 rounded-md pr-1 hover:bg-accent/60"
               >
-                <a
-                  
-                  aria-disabled={!check.url}
-                  href={check.url ?? undefined} target="_blank" rel="noopener noreferrer"
+                <button
+                  type="button"
+                  disabled={!check.url}
+                  onClick={() => check.url && openCheck(check.url)}
                   className={cn(
                     "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-2 text-left text-xs leading-5 [&>svg]:mt-0.5",
                     check.url ? "cursor-pointer" : "cursor-default",
@@ -845,7 +845,7 @@ export function PullRequestSummaryTab({
                   <span className="shrink-0 text-muted-foreground">
                     {pullRequestCheckStatusLabel(check)}
                   </span>
-                </a>
+                </button>
                 {/* Only where there is something to fix. A passing check has no failure to
                       reproduce, and the button would be an invitation to waste a thread. */}
                 {onFixFinding && failing ? (

@@ -1828,13 +1828,13 @@ export function PullRequestDetailPanel({
                   <TooltipTrigger
                     render={
                       repositoryUrl ? (
-                        <a
-                          
-                          href={repositoryUrl} target="_blank" rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => void readLocalApi()?.shell.openExternal(repositoryUrl)}
                           className="min-w-0 cursor-pointer truncate text-left font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                         >
                           {detail.repository}
-                        </a>
+                        </button>
                       ) : (
                         <span className="min-w-0 truncate font-medium text-muted-foreground">
                           {detail.repository}
@@ -1849,10 +1849,10 @@ export function PullRequestDetailPanel({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <a
-                        
-                        href={detail.url} target="_blank" rel="noopener noreferrer"
-                        
+                      <button
+                        type="button"
+                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
                           "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 hover:underline",
                           statePresentation.toneClassName,
@@ -1861,7 +1861,7 @@ export function PullRequestDetailPanel({
                       >
                         #{detail.number}
                         <ExternalLinkIcon aria-hidden className="size-2.5" />
-                      </a>
+                      </button>
                     }
                   />
                   <TooltipPopup side="top">{openOnHostLabel(hostClient)}</TooltipPopup>
@@ -1903,11 +1903,11 @@ export function PullRequestDetailPanel({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <a
-                        
+                      <button
+                        type="button"
                         tabIndex={condensed ? 0 : -1}
-                        href={detail.url} target="_blank" rel="noopener noreferrer"
-                        
+                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
                           "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 hover:underline",
                           statePresentation.toneClassName,
@@ -1916,7 +1916,7 @@ export function PullRequestDetailPanel({
                       >
                         #{detail.number}
                         <ExternalLinkIcon aria-hidden className="size-2.5" />
-                      </a>
+                      </button>
                     }
                   />
                   <TooltipPopup side="top">{openOnHostLabel(hostClient)}</TooltipPopup>
@@ -2366,7 +2366,7 @@ export function PullRequestDetailPanel({
                       ) : null}
                     </>
                   ) : null}
-                  <MenuItem render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}>
+                  <MenuItem onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}>
                     <ArrowUpRightIcon className="size-3.5" />
                     {openOnHostLabel(hostClient)}
                   </MenuItem>

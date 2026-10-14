@@ -1,19 +1,19 @@
-import { hostIntegration } from "../../hostIntegration";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   htmlRenderThemeFragment,
   htmlRenderThemeMessage,
+  htmlRenderResult,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
-  htmlRenderResult,
 } from "@t3tools/shared/htmlRender";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
-import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
+import { hostIntegration } from "../../hostIntegration";
 
 /**
  * Chromium's viewer opens with its own toolbar, a thumbnail rail and a small
@@ -161,7 +161,7 @@ export function HtmlRenderDocument(props: {
       src={src}
       title={props.title}
       // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
-      sandbox="allow-scripts allow-forms allow-popups"
+      sandbox="allow-scripts allow-forms"
       loading="lazy"
       onLoad={() => {
         setLoaded(true);

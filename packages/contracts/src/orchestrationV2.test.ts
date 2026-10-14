@@ -30,7 +30,6 @@ import {
   OrchestrationV2LimitRecoveryUpdate,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderCapabilities,
-  OrchestrationV2PendingRuntimeRequestSummary,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
   OrchestrationV2RpcSchemas,
@@ -131,7 +130,6 @@ const decodeOrchestrationV2ProviderThread = Schema.decodeUnknownSync(Orchestrati
 const decodeOrchestrationV2ThreadShell = Schema.decodeUnknownSync(OrchestrationV2ThreadShell);
 const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
   OrchestrationV2ProviderCapabilities,
-  OrchestrationV2PendingRuntimeRequestSummary,
 );
 
 const decodeOrchestrationV2SubscribeThreadInput = Schema.decodeUnknownSync(
@@ -1274,7 +1272,7 @@ describe("orchestration V2 contracts", () => {
     expect(runtimeThread.nativeMetadata).toBeNull();
   });
 
-  it("decodes current thread shell JSON without pendingBackgroundTasks as empty roster", () => {
+  it("decodes historical thread shell JSON without pendingBackgroundTasks as empty roster", () => {
     const shell = decodeOrchestrationV2ThreadShell({
       createdBy: "user",
       creationSource: "web",
@@ -1301,9 +1299,6 @@ describe("orchestration V2 contracts", () => {
       activeRunId: null,
       status: "completed",
       pendingRuntimeRequest: null,
-      pendingQuestions: [],
-      latestRunCompletedAt: null,
-      lastVisitedAt: null,
       latestVisibleMessage: null,
       latestUserMessageAt: null,
       hasActionableProposedPlan: false,
@@ -1573,11 +1568,3 @@ describe("latestProviderTurnForAttempt", () => {
     expect(latestProviderTurnForAttempt(turns, null)).toBeUndefined();
   });
 });
-
- it('native approval summary requires explicit actionability and omits response bodies', () => {
-  const decode = Schema.decodeUnknownSync(OrchestrationV2PendingRuntimeRequestSummary);
-  for (const responseCapability of ['live', 'message', 'not_resumable']) {
-    expect(decode({ id: 'approval', kind: 'command', createdAt: now, responseCapability })).toMatchObject({ responseCapability });
-  }
-  expect(() => decode({ id: 'approval', kind: 'command', createdAt: now })).toThrow();
- });

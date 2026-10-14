@@ -1,9 +1,11 @@
 import { useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { StateStorage } from "./lib/storage";
 import type { ClientSettings, ModelSelection, ServerSettings } from "@t3tools/contracts";
 
 /** Optional embedding services supplied before the native client is loaded. */
 export interface HostIntegration {
+  readonly useThreadVisit?: (thread: EnvironmentThreadShell | null, routeKey: string) => void;
   readonly serverSettingsDefaults?: Partial<ServerSettings>;
   readonly externalNavigation?: boolean;
   readonly defaultThreadDetailsOpen?: boolean;
@@ -34,14 +36,7 @@ export interface HostIntegration {
     read: () => unknown;
     write: (value: "light" | "dark" | "system") => void;
   };
-  readonly sidebar?: {
-    initial: (input: {
-      ready: boolean;
-      environmentId: string | null;
-      openCount: number;
-    }) => boolean;
-    changed: (open: boolean) => void;
-  };
+  readonly useSidebar?: () => { open?: boolean; onOpenChange?: (open: boolean) => void };
 }
 declare global {
   interface Window {

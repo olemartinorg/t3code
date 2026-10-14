@@ -1,8 +1,8 @@
+import { hostIntegration } from "../hostIntegration";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
-  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -39,13 +39,7 @@ import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
-import {
-  useProjects,
-  useThreadShells,
-  useAllEnvironmentShellsBootstrapped,
-} from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
-import { useInitialConversationSidebar } from "../hooks/useInitialConversationSidebar";
+import { useProjects } from "../state/entities";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -244,15 +238,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Seeds server-side visited tracking from this browser's localStorage the
   useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const shells = useThreadShells();
-  const shellReady = useAllEnvironmentShellsBootstrapped();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const initialSidebar = useInitialConversationSidebar({
-    pathname,
-    shellReady,
-    environmentId: primaryEnvironmentId,
-    shells,
-  });
+  const initialSidebar = hostIntegration()?.useSidebar?.() ?? {};
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");

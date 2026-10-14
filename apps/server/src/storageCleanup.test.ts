@@ -80,7 +80,7 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
     linkedPullRequest: null,
     status: "idle",
     activityRunStatus: null,
-    pendingRuntimeRequest: null, pendingQuestions: [],
+    pendingRuntimeRequest: null,
     pendingBackgroundTasks: [],
     latestRunId: null,
     latestRunRequestedAt: null,
@@ -146,7 +146,6 @@ describe("V2 storage cleanup eligibility", () => {
             pendingRuntimeRequest: {
               id: RuntimeRequestId.make("request-1"),
               kind: "command",
-              responseCapability: "live",
               createdAt: at(0),
             },
           },

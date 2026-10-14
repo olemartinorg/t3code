@@ -157,7 +157,7 @@ function LinkRow({
         />
       )}
       <a
-        href={link.url} target="_blank" rel="noopener noreferrer"
+        href={link.url}
         onClick={(event) => openPrLink(event, link.url, threadRef)}
         className="flex min-w-0 flex-1"
       >
@@ -305,7 +305,7 @@ function LinkRow({
               <LinkIcon className="size-3.5" />
               Copy link
             </MenuItem>
-            <MenuItem render={<a href={link.url} target="_blank" rel="noopener noreferrer" />}>
+            <MenuItem onClick={(event) => openPrLink(event, link.url, threadRef)}>
               <ArrowUpRightIcon className="size-3.5" />
               Open
             </MenuItem>
