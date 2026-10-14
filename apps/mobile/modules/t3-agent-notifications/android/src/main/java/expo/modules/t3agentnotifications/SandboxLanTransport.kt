@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.Uri
 import com.facebook.react.modules.network.OkHttpClientFactory
 import com.facebook.react.modules.network.OkHttpClientProvider
 import java.io.IOException
@@ -16,13 +15,15 @@ import java.util.Collections
 import java.util.WeakHashMap
 import javax.net.SocketFactory
 import okhttp3.Dns
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 
 /** Companion-only LAN policy in the actual HTTP/WebSocket transport; TLS remains Android's normal verifier. */
 object SandboxLanTransport {
   private var installed = false
   private var connectivity: ConnectivityManager? = null
-  @Volatile private var origin: Uri? = null
+  @Volatile private var origin: HttpUrl? = null
   @Volatile private var viewToken: String? = null
   private val clients = Collections.newSetFromMap(WeakHashMap<OkHttpClient, Boolean>())
   private val sockets = Collections.newSetFromMap(WeakHashMap<Socket, Boolean>())
@@ -36,13 +37,15 @@ object SandboxLanTransport {
       val client = OkHttpClientProvider.createClientBuilder()
         .followRedirects(false).followSslRedirects(false).proxy(Proxy.NO_PROXY)
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS)
-        .dns(Dns { hostname ->
+        .dns(object : Dns {
+          override fun lookup(hostname: String): List<InetAddress> {
           val configured = origin ?: throw IOException("No Sandbox host selected")
           if (!hostname.equals(configured.host, true)) throw IOException("Host is outside selected Sandbox origin")
           val network = lanNetwork()
           val addresses = network.getAllByName(hostname).toList()
           if (addresses.isEmpty() || addresses.any { !onLink(network, it) }) throw IOException("Sandbox host is not on the connected LAN")
-          addresses
+          return addresses
+          }
         })
         .socketFactory(object : SocketFactory() {
           override fun createSocket(): Socket = remember(lanNetwork().socketFactory.createSocket())
@@ -54,7 +57,7 @@ object SandboxLanTransport {
         .addInterceptor { chain ->
           val configured = origin ?: throw IOException("No Sandbox host selected")
           val request = chain.request()
-          if (request.url.scheme != configured.scheme || !request.url.host.equals(configured.host, true) || request.url.port != port(configured)) throw IOException("Request is outside selected Sandbox origin")
+          if (request.url.scheme != configured.scheme || !request.url.host.equals(configured.host, true) || request.url.port != configured.port) throw IOException("Request is outside selected Sandbox origin")
           val network = lanNetwork()
           val addresses = network.getAllByName(request.url.host)
           if (addresses.isEmpty() || addresses.any { !onLink(network, it) }) throw IOException("Sandbox host is not on the connected LAN")
@@ -80,11 +83,12 @@ object SandboxLanTransport {
   }
   fun setViewToken(value: String?) { viewToken = value }
   fun select(value: String?) {
-    val next = value?.let { Uri.parse(it) }
-    if (next != null && (next.scheme !in setOf("http", "https") || next.host.isNullOrBlank() || next.userInfo != null || next.query != null || next.fragment != null || (next.path != "" && next.path != "/"))) throw IllegalArgumentException("Sandbox requires a LAN HTTP or HTTPS origin")
+    val next = value?.let(::parseOrigin)
     if (origin?.toString() != next?.toString()) { viewToken = null; origin = next; cancel() }
   }
-  private fun port(uri: Uri) = if (uri.port == -1) (if (uri.scheme == "https") 443 else 80) else uri.port
+  internal fun parseOrigin(value: String): HttpUrl = value.toHttpUrl().also {
+    require(it.scheme in setOf("http", "https") && it.encodedUsername.isEmpty() && it.encodedPassword.isEmpty() && it.query == null && it.fragment == null && it.encodedPath == "/") { "Sandbox requires a LAN HTTP or HTTPS origin" }
+  }
   private fun remember(socket: Socket): Socket { synchronized(sockets) { sockets.add(socket) }; return socket }
   private fun cancel() {
     synchronized(clients) { clients.forEach { it.dispatcher.cancelAll(); it.connectionPool.evictAll() } }
