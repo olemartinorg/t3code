@@ -9,11 +9,11 @@ import {
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
+import { hostIntegration } from "../../hostIntegration";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
-import { hostIntegration } from "../../hostIntegration";
 
 /**
  * Chromium's viewer opens with its own toolbar, a thumbnail rail and a small
