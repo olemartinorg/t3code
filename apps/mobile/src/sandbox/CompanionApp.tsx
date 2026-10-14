@@ -56,6 +56,7 @@ import {
   applyPhoneFrame,
   emptyPhoneState,
   portableTaskTarget,
+  phoneAgentAvailability,
   samePhoneTarget,
   type PhoneTask,
 } from "./model";
@@ -112,6 +113,7 @@ const Stack = createNativeStackNavigator({
     ThreadQueue: createNativeStackScreen({ screen: ThreadQueueSheet }),
     ThreadAgents: createNativeStackScreen({ screen: ThreadAgentsSheet }),
     ThreadAttachment: createNativeStackScreen({ screen: AttachmentFileScreen }),
+    ThreadFile: createNativeStackScreen({ screen: ThreadFileScreen }),
     NewTaskSheet: createNativeStackScreen({
       screen: DraftStack,
       layout: ({ children }) => (
@@ -153,6 +155,7 @@ function Phone() {
     [connected, setConnected] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [pendingLaunch, setPendingLaunch] = useState<{
+    generation: number;
     operationId: string;
     taskId: string;
     serverId: string;
@@ -198,6 +201,7 @@ function Phone() {
     ) => {
       if (!host) return;
       if (!client) return;
+      setPendingLaunch(null);
       const intentGeneration = ++navigationGeneration.current;
       const current = (await client.tasks()).tasks.find((candidate) =>
         samePhoneTarget(task, candidate),
@@ -328,10 +332,12 @@ function Phone() {
   }, [host, client, foreground, cursor, epoch]);
   const invoke = async (task: PhoneTask, actionId: string, input: Record<string, unknown>) => {
     if (!client || !host) return;
+    const intentGeneration = navigationGeneration.current;
     const result = await client.invokeTask(task.id, actionId, input, randomUUID());
-    if (!result.launch) return;
+    if (!result.launch || intentGeneration !== navigationGeneration.current) return;
     if (result.operation)
       setPendingLaunch({
+        generation: intentGeneration,
         operationId: result.operation.id,
         taskId: task.id,
         serverId: host.serverId,
@@ -340,7 +346,14 @@ function Phone() {
     else await open(task, result.launch.conversationId, result.launch.agentIntent ?? "open");
   };
   useEffect(() => {
-    if (!pendingLaunch || pendingLaunch.serverId !== host?.serverId) return;
+    if (!pendingLaunch) return;
+    if (
+      pendingLaunch.serverId !== host?.serverId ||
+      pendingLaunch.generation !== navigationGeneration.current
+    ) {
+      setPendingLaunch(null);
+      return;
+    }
     const operation = state.operations.find((item) => item.id === pendingLaunch.operationId);
     if (!operation || operation.state === "queued" || operation.state === "running") return;
     setPendingLaunch(null);
@@ -515,9 +528,9 @@ function Phone() {
           conversationId: target.conversationId,
           intent: "open",
         };
-        if (!task.presentation.running) {
+        if (!phoneAgentAvailability(task).open) {
           navigation.navigate("Home");
-          setError("Task is stopped. Use its normal Start action to continue.");
+          setError("Conversation unavailable. Reconnect to the PC and use its normal actions.");
           return;
         }
         const view = await openPhoneView(
@@ -617,6 +630,7 @@ function Phone() {
         onStateChange={(state) => {
           const top = state?.routes[state.index];
           if (top?.name === "Home") {
+            setPendingLaunch(null);
             navigationGeneration.current++;
             route.current = null;
             void closePhoneView();
@@ -628,6 +642,10 @@ function Phone() {
               params?.threadId &&
               params.environmentId === currentNativeView()?.session.environmentId
             ) {
+              if (current.conversationId !== params.threadId) {
+                setPendingLaunch(null);
+                navigationGeneration.current++;
+              }
               current.conversationId = params.threadId;
               current.intent = "open";
               const target = portableTaskTarget(current.task, params.threadId);
