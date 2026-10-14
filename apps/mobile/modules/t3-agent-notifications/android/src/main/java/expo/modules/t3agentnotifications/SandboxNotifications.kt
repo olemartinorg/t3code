@@ -71,11 +71,13 @@ object SandboxNotifications {
       val hosts = JSONObject(prefs.getString("hosts", "{}")!!); if (!hosts.optBoolean(hostId, false)) return
       val expiresAt = timestamp(payload.getString("expiresAt")) ?: return
       if (expiresAt <= now || expiresAt > now + 125_000 || timestamp(payload.getString("occurredAt")) == null) return
-      val target = payload.getJSONObject("target"), key = targetKey(hostId, target)
+      val target = payload.getJSONObject("target")
+      val key = targetKey(hostId, target)
       val category = payload.getString("category")
       val categoryLabel = when(category) { "question" -> "Question waiting"; "approval" -> "Approval waiting"; "completed" -> "Turn completed"; "failed" -> "Turn failed"; else -> return }
       if (payload.getString("nativeEventId").isBlank()) return
-      val label = payload.getString("label"), conversation = payload.getString("conversationLabel")
+      val label = payload.getString("label")
+      val conversation = payload.getString("conversationLabel")
       if (label.length > 80 || conversation.length > 80) return
       val seen = JSONObject(prefs.getString("seen", "{}")!!)
       seen.keys().asSequence().toList().filter { seen.optLong(it) <= now }.forEach { seen.remove(it) }

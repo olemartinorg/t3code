@@ -350,6 +350,20 @@ function Phone() {
         setError("Task started; select its conversation to continue"),
       );
   }, [pendingLaunch, state, host, open]);
+  useEffect(() => {
+    const current = route.current;
+    if (
+      !connected ||
+      !foreground ||
+      !current ||
+      current.host.serverId !== host?.serverId ||
+      currentNativeView()
+    )
+      return;
+    void open(current.task, current.conversationId, current.intent).catch(() =>
+      setError("Conversation unavailable after reconnect; select its normal action."),
+    );
+  }, [connected, foreground, host, open]);
   const addHost = async (name: string, origin: string, token: string) => {
     navigationGeneration.current++;
     if (!name.trim() || name.length > 80 || !token || token.length > 8192 || /[\r\n]/.test(token))
