@@ -23,7 +23,12 @@ test("Sandbox APK has independent identity, no cloud/OTA configuration and norma
     platforms: ["android"],
     android: { package: "org.olemartin.sandbox.companion" },
     updates: { enabled: false, checkAutomatically: "NEVER" },
-    extra: { sandboxCompanion: true, relay: { url: null }, clerk: { publishableKey: null } },
+    extra: {
+      androidPushConfigured: false,
+      sandboxCompanion: true,
+      relay: { url: null },
+      clerk: { publishableKey: null },
+    },
   });
   expect(config.updates?.url).toBeUndefined();
   expect(config.extra?.eas).toBeUndefined();

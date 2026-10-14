@@ -35,6 +35,7 @@ export function sandboxAndroidConfig(base: ExpoConfig): ExpoConfig {
     extra: {
       appVariant: "sandbox",
       sandboxCompanion: true,
+      androidPushConfigured: Boolean(base.android?.googleServicesFile),
       relay: { url: null },
       clerk: { publishableKey: null, jwtTemplate: null },
       observability: { tracesUrl: null, tracesDataset: null, tracesToken: null },

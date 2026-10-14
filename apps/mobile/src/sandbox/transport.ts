@@ -26,14 +26,14 @@ export function setNativeView(value: NativeView | null) {
 export function trustedOrigin(origin: string): string {
   const url = new URL(origin);
   if (
-    url.protocol !== "https:" ||
+    !["http:", "https:"].includes(url.protocol) ||
     url.username ||
     url.password ||
     url.pathname !== "/" ||
     url.search ||
     url.hash
   )
-    throw new Error("Use the PC’s trusted LAN HTTPS origin");
+    throw new Error("Use the PC’s LAN HTTP or HTTPS origin");
   return url.origin;
 }
 /** Native SDK traffic gets only the active view capability; ordinary API traffic keeps its own bearer. */
@@ -55,8 +55,8 @@ export function nativeT3Socket(url: string | URL): WebSocket {
   const current = view;
   if (!current) throw new Error("Conversation view is not active");
   const target = new URL(String(url));
-  const origin = target.origin.replace(/^wss:/, "https:");
-  if (target.protocol !== "wss:" || origin !== current.origin)
+  const origin = target.origin.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+  if (!["ws:", "wss:"].includes(target.protocol) || origin !== current.origin)
     throw new Error("Native conversation origin changed");
   const Constructor = globalThis.WebSocket as unknown as new (
     url: string,

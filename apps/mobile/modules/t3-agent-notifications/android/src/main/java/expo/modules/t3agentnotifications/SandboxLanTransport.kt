@@ -54,7 +54,7 @@ object SandboxLanTransport {
         .addInterceptor { chain ->
           val configured = origin ?: throw IOException("No Sandbox host selected")
           val request = chain.request()
-          if (request.url.scheme != "https" || !request.url.host.equals(configured.host, true) || request.url.port != port(configured)) throw IOException("Request is outside selected Sandbox HTTPS origin")
+          if (request.url.scheme != configured.scheme || !request.url.host.equals(configured.host, true) || request.url.port != port(configured)) throw IOException("Request is outside selected Sandbox origin")
           val network = lanNetwork()
           val addresses = network.getAllByName(request.url.host)
           if (addresses.isEmpty() || addresses.any { !onLink(network, it) }) throw IOException("Sandbox host is not on the connected LAN")
@@ -81,10 +81,10 @@ object SandboxLanTransport {
   fun setViewToken(value: String?) { viewToken = value }
   fun select(value: String?) {
     val next = value?.let { Uri.parse(it) }
-    if (next != null && (next.scheme != "https" || next.host.isNullOrBlank() || next.userInfo != null || next.query != null || next.fragment != null || (next.path != "" && next.path != "/"))) throw IllegalArgumentException("Sandbox requires a trusted LAN HTTPS origin")
+    if (next != null && (next.scheme !in setOf("http", "https") || next.host.isNullOrBlank() || next.userInfo != null || next.query != null || next.fragment != null || (next.path != "" && next.path != "/"))) throw IllegalArgumentException("Sandbox requires a LAN HTTP or HTTPS origin")
     if (origin?.toString() != next?.toString()) { viewToken = null; origin = next; cancel() }
   }
-  private fun port(uri: Uri) = if (uri.port == -1) 443 else uri.port
+  private fun port(uri: Uri) = if (uri.port == -1) (if (uri.scheme == "https") 443 else 80) else uri.port
   private fun remember(socket: Socket): Socket { synchronized(sockets) { sockets.add(socket) }; return socket }
   private fun cancel() {
     synchronized(clients) { clients.forEach { it.dispatcher.cancelAll(); it.connectionPool.evictAll() } }

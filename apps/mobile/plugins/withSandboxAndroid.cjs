@@ -10,7 +10,7 @@ module.exports = (config) => {
     const application = next.modResults.manifest.application?.[0];
     if (!application) throw new Error("Sandbox Android manifest has no application");
     application.$ ??= {};
-    application.$["android:usesCleartextTraffic"] = "false";
+    application.$["android:usesCleartextTraffic"] = "true";
     application.$["android:networkSecurityConfig"] = "@xml/sandbox_network_security";
     const permissions = (next.modResults.manifest["uses-permission"] ??= []);
     for (const name of ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"])
@@ -36,10 +36,11 @@ module.exports = (config) => {
     async (next) => {
       const directory = path.join(next.modRequest.platformProjectRoot, "app/src/main/res/xml");
       await fs.mkdir(directory, { recursive: true });
-      // The user may install a LAN CA. Android still checks certificate chains and hostnames.
+      // HTTP is an explicit selected LAN origin; the native transport fences every request.
+      // Optional HTTPS still checks Android certificate chains and hostnames.
       await fs.writeFile(
         path.join(directory, "sandbox_network_security.xml"),
-        '<network-security-config><base-config cleartextTrafficPermitted="false"><trust-anchors><certificates src="system"/><certificates src="user"/></trust-anchors></base-config></network-security-config>\n',
+        '<network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/><certificates src="user"/></trust-anchors></base-config></network-security-config>\n',
       );
       return next;
     },

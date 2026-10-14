@@ -231,7 +231,7 @@ export function Home() {
           <TextInput
             style={text}
             placeholderTextColor="#a1a1aa"
-            placeholder="https://pc.local:port"
+            placeholder="http://pc.local:19480"
             autoCapitalize="none"
             value={origin}
             onChangeText={setOrigin}

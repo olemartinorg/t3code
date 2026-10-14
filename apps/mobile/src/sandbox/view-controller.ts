@@ -30,7 +30,7 @@ const changeNativeConnection = createRuntimeCommand(connectionAtomRuntime, {
         environmentId = EnvironmentId.make(input.environmentId);
       if (input.enabled) {
         const socket = new URL(input.origin);
-        socket.protocol = "wss:";
+        socket.protocol = socket.protocol === "https:" ? "wss:" : "ws:";
         yield* registry.registerPlatform(
           new PrimaryConnectionRegistration({
             target: new PrimaryConnectionTarget({

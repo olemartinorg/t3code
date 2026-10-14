@@ -11,6 +11,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { randomUUID } from "expo-crypto";
 import { EventCursor, SandboxApiClient } from "sandbox/client";
 import { notificationPayloadSchema } from "sandbox/contracts";
@@ -382,6 +383,13 @@ function Phone() {
   };
   const notificationSetup = async () => {
     if (!host || !client) return;
+    if (Constants.expoConfig?.extra?.androidPushConfigured !== true) {
+      Alert.alert(
+        "Push setup pending",
+        "LAN controls and conversations work in this APK. Install a push-enabled build after Firebase setup before enabling phone notifications.",
+      );
+      return;
+    }
     const result = await Notifications.requestPermissionsAsync();
     setPermission(result.status);
     if (!result.granted) {

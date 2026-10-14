@@ -52,13 +52,38 @@ test("native socket carries scoped header without URLs or control bearer, and un
   expect(() => nativeT3Socket("wss://pc.local/ws")).toThrow("not active");
   expect(create).toHaveBeenCalledTimes(1);
 });
-test("control origin must use ordinary trusted HTTPS without embedded credentials or routing", () => {
+test("control origin allows HTTP or HTTPS without embedded credentials or routing", () => {
   expect(trustedOrigin("https://pc.local:19480/")).toBe("https://pc.local:19480");
+  expect(trustedOrigin("http://pc.local:19480/")).toBe("http://pc.local:19480");
   for (const origin of [
-    "http://pc.local",
+    "ftp://pc.local",
     "https://key@pc.local",
     "https://pc.local/private",
     "https://pc.local/?token=private",
   ])
-    expect(() => trustedOrigin(origin)).toThrow("trusted LAN HTTPS");
+    expect(() => trustedOrigin(origin)).toThrow("LAN HTTP or HTTPS");
+});
+
+test("selected HTTP uses matching WS and scoped headers without allowing a protocol switch", async () => {
+  const create = vi.fn();
+  class FakeSocket {
+    constructor(...args: unknown[]) {
+      create(...args);
+    }
+  }
+  vi.stubGlobal("WebSocket", FakeSocket);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}")),
+  );
+  setNativeView({ origin: "http://pc.local:19480", generation: 3, session });
+  await nativeT3Fetch("http://pc.local:19480/api/thread");
+  nativeT3Socket("ws://pc.local:19480/ws");
+  expect(create).toHaveBeenCalledWith("ws://pc.local:19480/ws", [], {
+    headers: { "x-sandbox-view-token": "owned-scoped-view" },
+  });
+  expect(() => nativeT3Socket("wss://pc.local:19480/ws")).toThrow("origin changed");
+  await expect(nativeT3Fetch("https://pc.local:19480/api/thread")).rejects.toThrow(
+    "origin changed",
+  );
 });
