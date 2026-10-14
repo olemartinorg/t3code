@@ -1,3 +1,4 @@
+import { hostIntegration } from "../../hostIntegration";
 import { SettingsGroup } from "./SettingsGroup";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
@@ -24,7 +25,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
-  DEFAULT_UNIFIED_SETTINGS,
+  DEFAULT_UNIFIED_SETTINGS as NATIVE_DEFAULT_UNIFIED_SETTINGS,
   type ChatWidth,
   type DiffLayout,
   type EnvironmentIdentificationMode,
@@ -170,6 +171,11 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
+
+const DEFAULT_UNIFIED_SETTINGS = {
+  ...NATIVE_DEFAULT_UNIFIED_SETTINGS,
+  ...hostIntegration()?.serverSettingsDefaults,
+};
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",

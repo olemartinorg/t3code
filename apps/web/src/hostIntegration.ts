@@ -1,9 +1,10 @@
 import { useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import type { StateStorage } from "./lib/storage";
-import type { ClientSettings, ModelSelection } from "@t3tools/contracts";
+import type { ClientSettings, ModelSelection, ServerSettings } from "@t3tools/contracts";
 
 /** Optional embedding services supplied before the native client is loaded. */
 export interface HostIntegration {
+  readonly serverSettingsDefaults?: Partial<ServerSettings>;
   readonly externalNavigation?: boolean;
   readonly defaultThreadDetailsOpen?: boolean;
   readonly Landing?: ComponentType;

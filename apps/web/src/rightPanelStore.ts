@@ -210,10 +210,18 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
   surfaces: [],
 };
 
-const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
-  inlineOpen: hostIntegration()?.defaultThreadDetailsOpen ?? true,
+const OPEN_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
+  inlineOpen: true,
   popoverOpen: false,
 };
+const CLOSED_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
+  inlineOpen: false,
+  popoverOpen: false,
+};
+const defaultThreadPanelVisibility = () =>
+  hostIntegration()?.defaultThreadDetailsOpen === false
+    ? CLOSED_THREAD_PANEL_VISIBILITY
+    : OPEN_THREAD_PANEL_VISIBILITY;
 
 const singletonSurface = (
   kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
@@ -340,10 +348,10 @@ const updateThreadPanelVisibilityMap = (
   threadKey: string,
   updater: (current: ThreadPanelVisibility) => ThreadPanelVisibility,
 ): Record<string, ThreadPanelVisibility> => {
-  const current = byThreadKey[threadKey] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
+  const current = byThreadKey[threadKey] ?? defaultThreadPanelVisibility();
   const next = updater(current);
   if (
-    next.inlineOpen === DEFAULT_THREAD_PANEL_VISIBILITY.inlineOpen &&
+    next.inlineOpen === defaultThreadPanelVisibility().inlineOpen &&
     !next.popoverOpen &&
     !next.manualChoice
   ) {
@@ -1123,8 +1131,8 @@ export function selectThreadPanelVisibility(
   byThreadKey: Record<string, ThreadPanelVisibility>,
   ref: ScopedThreadRef | null | undefined,
 ): ThreadPanelVisibility {
-  if (!ref) return DEFAULT_THREAD_PANEL_VISIBILITY;
-  return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
+  if (!ref) return defaultThreadPanelVisibility();
+  return byThreadKey[scopedThreadKey(ref)] ?? defaultThreadPanelVisibility();
 }
 
 export function selectThreadPanelOpen(
