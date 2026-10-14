@@ -773,13 +773,8 @@ export function resolveThreadLastVisitedAt(
 }
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
-  if (hostIntegration()?.useThreadVisit) {
-    const completedAt = Date.parse(thread.lastCompletionAt ?? "");
-    return (
-      !Number.isNaN(completedAt) &&
-      (!thread.lastVisitedAt || Date.parse(thread.lastVisitedAt) < completedAt)
-    );
-  }
+  const hostPredicate = hostIntegration()?.hasUnseenCompletion;
+  if (hostPredicate) return hostPredicate(thread);
   if (!thread.latestRun?.completedAt) return false;
   const completedAt = Date.parse(thread.latestRun.completedAt);
   if (Number.isNaN(completedAt)) return false;

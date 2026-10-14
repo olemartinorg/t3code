@@ -5,6 +5,10 @@ import type { ClientSettings, ModelSelection, ServerSettings } from "@t3tools/co
 
 /** Optional embedding services supplied before the native client is loaded. */
 export interface HostIntegration {
+  readonly hasUnseenCompletion?: (thread: {
+    lastCompletionAt?: string | null | undefined;
+    lastVisitedAt?: string | null | undefined;
+  }) => boolean;
   readonly useThreadVisit?: (thread: EnvironmentThreadShell | null, routeKey: string) => void;
   readonly serverSettingsDefaults?: Partial<ServerSettings>;
   readonly externalNavigation?: boolean;

@@ -1,5 +1,4 @@
 import { hostIntegration } from "../hostIntegration";
-import { ChatCanvas } from "./chat/ChatCanvas";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
