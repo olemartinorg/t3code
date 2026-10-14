@@ -71,3 +71,25 @@ test("one admitted owner batch replaces included scopes together and retains omi
   expect(next.github).toBe(previous.github);
   expect(previous.active).toEqual([managed]);
 });
+
+test("PR facts and supplied relationships/visibility replace together without resetting omitted scopes", () => {
+  const previous = emptyPhoneState();
+  const views = { pr: { taskNames: ["Existing task"], subtitle: "Open", visibility: null } };
+  const github = {
+    prs: [{ id: "pr", url: "https://github.com/owner/repo/pull/1" }],
+    error: null,
+    refreshing: false,
+  };
+  const frame = {
+    type: "state",
+    subscriptions: [{ topic: "github", data: { github, pullRequestViews: views } }],
+  } as unknown as Frame;
+  const next = applyPhoneFrame(previous, frame);
+  expect(next.github).toBe(github);
+  expect(next.pullRequestViews).toBe(views);
+  expect(next.active).toBe(previous.active);
+  expect(
+    applyPhoneFrame(next, { type: "state", subscriptions: [] } as unknown as Frame)
+      .pullRequestViews,
+  ).toBe(views);
+});
