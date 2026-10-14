@@ -2,10 +2,15 @@
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, afterEach, expect, test, vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-const state = vi.hoisted(() => ({ visit: vi.fn(), localVisit: vi.fn() }));
+const state = vi.hoisted(() => ({ visit: vi.fn(), localVisit: vi.fn(), connection: "connected" }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.visit }));
 vi.mock("../state/threads", () => ({ threadEnvironment: { visit: {} } }));
+vi.mock("../state/environments", () => ({
+  useEnvironment: () => ({ connection: { phase: state.connection } }),
+}));
 vi.mock("../uiStateStore", () => ({
   useUiStateStore: (select: (value: unknown) => unknown) =>
     select({ markThreadVisited: state.localVisit, threadLastVisitedAtById: {} }),
@@ -34,6 +39,8 @@ async function show(value: boolean) {
 beforeEach(() => {
   vi.useFakeTimers();
   state.visit.mockReset();
+  state.visit.mockResolvedValue(AsyncResult.success(undefined));
+  state.connection = "connected";
   state.localVisit.mockReset();
   visible = false;
   window.t3Host = {
@@ -139,4 +146,52 @@ test("an imported completion later than metadata is acknowledged when visible", 
     environmentId: "env",
     input: { threadId: "thread", visitedAt: "2026-10-07T12:00:09.000Z" },
   });
+});
+
+async function connection(phase: string) {
+  state.connection = phase;
+  await act(async () => renderer!.update(<Reader value={{ ...thread }} />));
+}
+
+test("a visible cached shell waits for its native connected session before acknowledging", async () => {
+  visible = true;
+  state.connection = "connecting";
+  await act(async () => {
+    renderer = create(<Reader value={thread} />);
+  });
+  expect(state.visit).not.toHaveBeenCalled();
+  await connection("connected");
+  expect(state.visit).toHaveBeenCalledExactlyOnceWith({
+    environmentId: "env",
+    input: { threadId: "thread", visitedAt: thread.updatedAt },
+  });
+});
+
+test("a failed visit can acknowledge the same watermark after native reconnect", async () => {
+  visible = true;
+  state.visit.mockResolvedValueOnce(
+    AsyncResult.failure(Cause.fail(new Error("Session not ready"))),
+  );
+  await act(async () => {
+    renderer = create(<Reader value={thread} />);
+  });
+  expect(state.visit).toHaveBeenCalledTimes(1);
+  await connection("reconnecting");
+  expect(state.visit).toHaveBeenCalledTimes(1);
+  await connection("connected");
+  expect(state.visit).toHaveBeenCalledTimes(2);
+  expect(state.visit.mock.calls[1]).toEqual(state.visit.mock.calls[0]);
+});
+
+test("native reconnect does not acknowledge a hidden conversation", async () => {
+  state.connection = "connecting";
+  await act(async () => {
+    renderer = create(<Reader value={thread} />);
+  });
+  await connection("connected");
+  await connection("reconnecting");
+  await connection("connected");
+  expect(state.visit).not.toHaveBeenCalled();
+  await show(true);
+  expect(state.visit).toHaveBeenCalledTimes(1);
 });

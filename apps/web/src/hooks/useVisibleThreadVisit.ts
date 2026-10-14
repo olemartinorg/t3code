@@ -3,6 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useHostPaneVisible } from "../hostIntegration";
 import { threadEnvironment } from "../state/threads";
+import { useEnvironment } from "../state/environments";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt } from "../components/Sidebar.logic";
@@ -14,6 +15,8 @@ export function useVisibleThreadVisit(
   routeThreadKey: string,
 ) {
   const hostPaneVisible = useHostPaneVisible();
+  const connectionReady =
+    useEnvironment(serverThread?.environmentId ?? null)?.connection.phase === "connected";
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const activeThreadLocalLastVisitedAt = useUiStateStore(
@@ -22,7 +25,9 @@ export function useVisibleThreadVisit(
   const lastDispatchedVisitRef = useRef<string | null>(null);
   const lastVisitDispatchAtRef = useRef(0);
   useEffect(() => {
-    if (!hostPaneVisible) {
+    // Cached shells can render before the native environment registers its live session.
+    // A visit is a command, so only the connected session may acknowledge that content.
+    if (!hostPaneVisible || !connectionReady) {
       lastDispatchedVisitRef.current = null;
       lastVisitDispatchAtRef.current = 0;
       return;
@@ -61,6 +66,13 @@ export function useVisibleThreadVisit(
         void visitThreadMutation({
           environmentId: serverThread.environmentId,
           input: { threadId: serverThread.id, visitedAt },
+        }).then((result) => {
+          // A failed command did not acknowledge the transcript. Leave this watermark
+          // eligible when native connection readiness or foreground visibility returns.
+          if (result._tag === "Failure" && lastDispatchedVisitRef.current === dispatchKey) {
+            lastDispatchedVisitRef.current = null;
+            lastVisitDispatchAtRef.current = 0;
+          }
         });
       };
       // Unread prominence only flips on run completions (hasUnseenCompletion),
@@ -97,6 +109,7 @@ export function useVisibleThreadVisit(
     serverThread?.lastCompletionAt,
     serverThread?.updatedAt,
     hostPaneVisible,
+    connectionReady,
     visitThreadMutation,
   ]);
 }
