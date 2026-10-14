@@ -1,12 +1,20 @@
 import type { ExpoConfig } from "expo/config";
 
+import { sandboxAndroidConfig } from "./src/sandbox/config.ts";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
 
-const repoEnv = loadRepoEnv();
-Object.assign(process.env, repoEnv);
+const isSandboxVariant = process.env.APP_VARIANT === "sandbox";
+const repoEnv: Record<string, string | undefined> = isSandboxVariant
+  ? {
+      APP_VARIANT: "production",
+      T3CODE_MOBILE_UPDATES_ENABLED: "0",
+      T3CODE_ANDROID_GOOGLE_SERVICES_FILE: process.env.SANDBOX_ANDROID_GOOGLE_SERVICES_FILE,
+    }
+  : loadRepoEnv();
+if (!isSandboxVariant) Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
@@ -494,4 +502,4 @@ const config: ExpoConfig = {
   owner: "pingdotgg",
 };
 
-export default config;
+export default isSandboxVariant ? sandboxAndroidConfig(config) : config;

@@ -4,6 +4,10 @@
     "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "paths": {
+      "sandbox/client": ["./.generated/sandbox-client/dist/client/service-client"],
+      "sandbox/contracts": ["./.generated/sandbox-client/dist/contracts/api-contract"]
+    }
   }
 }

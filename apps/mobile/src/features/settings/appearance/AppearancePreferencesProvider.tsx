@@ -1,3 +1,4 @@
+import { sandboxCompanion } from "../../../sandbox/variant";
 import {
   createContext,
   startTransition,
@@ -86,7 +87,9 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     () => resolveAppearancePreferences(storedPreferences),
     [storedPreferences],
   );
-  const themeMode = normalizeMobileThemeMode(storedPreferences?.themeMode);
+  const themeMode = normalizeMobileThemeMode(
+    storedPreferences?.themeMode ?? (sandboxCompanion ? "dark" : undefined),
+  );
   const themeAppearance = themeMode === "system" ? systemColorScheme : themeMode;
   const resolvedThemeIds = resolveMobileThemeIds(storedPreferences ?? {});
   const themeIds = useMemo<MobileThemeIds>(

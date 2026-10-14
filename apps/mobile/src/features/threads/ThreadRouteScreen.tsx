@@ -1,3 +1,5 @@
+import { sandboxCompanion } from "../../sandbox/variant";
+import { reconnectPhoneView } from "../../sandbox/reconnect";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
@@ -105,6 +107,7 @@ function ThreadHeader(
   const { onOpenTerminal, onMergeBack } = props.gitControls;
   const native = useThreadHeaderOptions(props);
   const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
+    if (sandboxCompanion) return [];
     const actions: ScreenHeaderAction[] = [];
     if (props.onReturnToThread) {
       actions.push({
@@ -161,11 +164,11 @@ function ThreadHeader(
       <ScreenHeader
         title={props.title}
         subtitle={props.subtitle}
-        sidebar={native.sidebar}
-        options={native.options}
+        sidebar={sandboxCompanion ? undefined : native.sidebar}
+        options={sandboxCompanion ? undefined : native.options}
         optionsVersion={props.gitControls.projectScripts}
         trailing={
-          props.fileInspectorSupported && props.hasThreadCwd ? (
+          !sandboxCompanion && props.fileInspectorSupported && props.hasThreadCwd ? (
             <ScreenHeaderButton
               accessibilityLabel={
                 props.inspectorMode !== null && panes.auxiliaryPaneVisible
@@ -310,7 +313,8 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       }
       onAction={() => {
         if (routeEnvironmentRuntime !== null) {
-          onReconnectEnvironment(environmentId);
+          if (sandboxCompanion) void reconnectPhoneView();
+          else onReconnectEnvironment(environmentId);
           return;
         }
         navigation.navigate("SettingsSheet", {
@@ -533,7 +537,8 @@ function ThreadRouteContent(
     if (!environmentId) {
       return;
     }
-    onReconnectEnvironment(environmentId);
+    if (sandboxCompanion) void reconnectPhoneView();
+    else onReconnectEnvironment(environmentId);
   }, [environmentId, onReconnectEnvironment]);
 
   /* ─── Git action progress (for overlay banner) ──────────────────── */

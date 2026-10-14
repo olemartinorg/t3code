@@ -1,3 +1,4 @@
+import { sandboxCompanion } from "../../sandbox/variant";
 import { useAtomValue } from "@effect/atom-react";
 import { useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
@@ -339,7 +340,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const browserTabs = useThreadServerBrowserTabs({
     environmentId: props.environmentId,
     threadId: props.selectedThread.id,
-    enabled: props.serverConfig?.environment.capabilities.serverBrowser === true,
+    enabled:
+      !sandboxCompanion && props.serverConfig?.environment.capabilities.serverBrowser === true,
   });
   const openBrowserPreview = useCallback(
     (tabId?: string) => {
@@ -1149,7 +1151,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         <View className="flex-1" />
       )}
 
-      {showContent ? (
+      {showContent && !sandboxCompanion ? (
         <ThreadBrowserFloat
           key={selectedThreadKey}
           environmentId={props.environmentId}
@@ -1189,12 +1191,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 status={floatingStatus}
                 lift={floatingControlLift}
                 devicePreview={
-                  devicePreviews.length > 0
+                  !sandboxCompanion && devicePreviews.length > 0
                     ? { count: devicePreviews.length, onPress: openDevicePreview }
                     : null
                 }
                 browserPreview={
-                  browserTabs.tabs.length > 0
+                  !sandboxCompanion && browserTabs.tabs.length > 0
                     ? { count: browserTabs.tabs.length, onPress: () => openBrowserPreview() }
                     : null
                 }

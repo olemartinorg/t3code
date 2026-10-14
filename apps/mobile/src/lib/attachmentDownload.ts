@@ -1,3 +1,5 @@
+import { sandboxCompanion } from "../sandbox/variant";
+import { nativeT3Fetch } from "../sandbox/transport";
 import type { ChatFileAttachment } from "@t3tools/contracts";
 import type { Directory } from "expo-file-system";
 import type { SharingOptions } from "expo-sharing";
@@ -59,6 +61,24 @@ export interface AttachmentPreviewFile {
   readonly uri: string;
   readonly share: (signal: AbortSignal, sourceIdentifier?: string) => Promise<void>;
   readonly dispose: () => void;
+}
+
+async function downloadRemote(
+  url: string,
+  file: import("expo-file-system").File,
+  signal: AbortSignal,
+) {
+  if (!sandboxCompanion) {
+    const { File } = await import("expo-file-system");
+    await File.downloadFileAsync(url, file, { signal });
+    return;
+  }
+  const response = await nativeT3Fetch(url, { signal });
+  if (!response.ok) throw new Error("Attachment download failed");
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (signal.aborted) return;
+  file.create({ overwrite: true });
+  await file.write(bytes);
 }
 
 async function availableSharing(signal: AbortSignal) {
@@ -182,7 +202,7 @@ export async function openAttachmentInViewer(input: {
     if (/^(file|content):/.test(input.uri)) {
       await new File(input.uri).copy(cached.file);
     } else {
-      await File.downloadFileAsync(input.uri, cached.file, { signal: input.signal });
+      await downloadRemote(input.uri, cached.file, input.signal);
     }
     if (input.signal.aborted) return;
     const endHandoff = beginForegroundHandoff();
@@ -216,7 +236,7 @@ export async function downloadAttachmentForPreview(input: {
       cached.preview.dispose();
       return null;
     }
-    await File.downloadFileAsync(input.url, cached.file, { signal: input.signal });
+    await downloadRemote(input.url, cached.file, input.signal);
     if (input.signal.aborted) {
       cached.preview.dispose();
       return null;

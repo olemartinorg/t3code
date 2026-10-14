@@ -34,9 +34,39 @@ const resolveShikiDependencyRoot = (packageName) => {
   return currentDir;
 };
 
-config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
+const sandboxClientRoot =
+  process.env.APP_VARIANT === "sandbox" ? process.env.SANDBOX_CLIENT_ROOT : undefined;
+if (process.env.APP_VARIANT === "sandbox" && !sandboxClientRoot)
+  throw new Error("Sandbox Android requires the matching Sandbox SDK input");
+config.watchFolders = [
+  ...new Set([
+    ...(config.watchFolders ?? []),
+    workspaceRoot,
+    ...(sandboxClientRoot
+      ? [sandboxClientRoot, fs.realpathSync(path.join(sandboxClientRoot, "node_modules"))]
+      : []),
+  ]),
+];
 config.resolver = {
   ...config.resolver,
+  ...(sandboxClientRoot
+    ? {
+        resolveRequest: (context, name, platform) => {
+          if (name === "sandbox/client" || name === "sandbox/contracts") {
+            const manifest = JSON.parse(
+              fs.readFileSync(path.join(sandboxClientRoot, "package.json"), "utf8"),
+            );
+            const entry =
+              manifest.exports?.[name === "sandbox/client" ? "./client" : "./contracts"];
+            const target = typeof entry === "string" ? entry : entry?.default;
+            if (!target || !target.startsWith("./dist/"))
+              throw new Error("Sandbox SDK public export is unavailable");
+            return { type: "sourceFile", filePath: path.join(sandboxClientRoot, target) };
+          }
+          return context.resolveRequest(context, name, platform);
+        },
+      }
+    : {}),
   blockList: [
     ...(Array.isArray(config.resolver?.blockList)
       ? config.resolver.blockList
@@ -47,6 +77,7 @@ config.resolver = {
   ],
   extraNodeModules: {
     ...config.resolver?.extraNodeModules,
+    ...(sandboxClientRoot ? { sandbox: sandboxClientRoot } : {}),
     "@t3tools/mobile-third-party-licenses": generatedLicenseModuleRoot,
     "@t3tools/mobile-device-stream": generatedDeviceStreamRoot,
     "@t3tools/mobile-preview-stream": generatedPreviewStreamRoot,
@@ -78,7 +109,12 @@ async function generateMobileThirdPartyLicenses() {
   );
   const manifest = await generateThirdPartyLicenseManifest({
     configFile: path.join(workspaceRoot, "third-party-licenses.config.json"),
-    packageManifests: [{ bundle: "mobile", path: path.join(__dirname, "package.json") }],
+    packageManifests: [
+      { bundle: "mobile", path: path.join(__dirname, "package.json") },
+      ...(sandboxClientRoot
+        ? [{ bundle: "mobile", path: path.join(sandboxClientRoot, "package.json") }]
+        : []),
+    ],
     allowMissingGeneratedNotices:
       process.env.NODE_ENV !== "production" &&
       process.env.EAS_BUILD !== "true" &&
