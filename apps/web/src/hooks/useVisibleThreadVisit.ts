@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { useSandboxPaneVisible } from "../sandboxEmbedding";
+import { useHostPaneVisible } from "../hostIntegration";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
@@ -9,15 +9,20 @@ import { resolveThreadLastVisitedAt } from "../components/Sidebar.logic";
 
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 
-export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | null, routeThreadKey: string) {
-  const sandboxPaneVisible = useSandboxPaneVisible();
+export function useVisibleThreadVisit(
+  serverThread: EnvironmentThreadShell | null,
+  routeThreadKey: string,
+) {
+  const hostPaneVisible = useHostPaneVisible();
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
-  const markThreadVisited = useUiStateStore(store => store.markThreadVisited);
-  const activeThreadLocalLastVisitedAt = useUiStateStore(store => store.threadLastVisitedAtById[routeThreadKey]);
+  const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const activeThreadLocalLastVisitedAt = useUiStateStore(
+    (store) => store.threadLastVisitedAtById[routeThreadKey],
+  );
   const lastDispatchedVisitRef = useRef<string | null>(null);
   const lastVisitDispatchAtRef = useRef(0);
   useEffect(() => {
-    if (!sandboxPaneVisible) {
+    if (!hostPaneVisible) {
       lastDispatchedVisitRef.current = null;
       lastVisitDispatchAtRef.current = 0;
       return;
@@ -25,8 +30,13 @@ export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | nul
     if (!serverThread?.id) return;
     // Imported V1 completions can be later than the thread metadata timestamp.
     // Seeing that transcript must acknowledge its actual completion watermark.
-    const completedAt = serverThread.lastCompletionAt ? Date.parse(serverThread.lastCompletionAt) : NaN;
-    const threadUpdatedAt = Math.max(Date.parse(serverThread.updatedAt), Number.isNaN(completedAt) ? 0 : completedAt);
+    const completedAt = serverThread.lastCompletionAt
+      ? Date.parse(serverThread.lastCompletionAt)
+      : NaN;
+    const threadUpdatedAt = Math.max(
+      Date.parse(serverThread.updatedAt),
+      Number.isNaN(completedAt) ? 0 : completedAt,
+    );
     if (Number.isNaN(threadUpdatedAt)) return;
     const visitedAt = new Date(threadUpdatedAt).toISOString();
     const effectiveLastVisitedAt = resolveThreadLastVisitedAt(
@@ -86,7 +96,7 @@ export function useVisibleThreadVisit(serverThread: EnvironmentThreadShell | nul
     serverThread?.lastVisitedAt,
     serverThread?.lastCompletionAt,
     serverThread?.updatedAt,
-    sandboxPaneVisible,
+    hostPaneVisible,
     visitThreadMutation,
   ]);
 }

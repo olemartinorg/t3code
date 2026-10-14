@@ -205,12 +205,11 @@ describe("theme failure handling", () => {
   });
 });
 
-
 describe("native task appearance", () => {
   it("uses the saved task mode before browser preferences and keeps standalone fallback", async () => {
     let owned: Record<string, unknown> = { themeAppearanceMode: "dark" };
     vi.stubGlobal("window", {
-      sandboxT3: { getClientSettings: () => owned },
+      t3Host: { appearance: { read: () => owned.themeAppearanceMode } },
       localStorage: createStorage({ getItem: () => "light" }),
     });
     const { readAppearanceModePreference } = await import("./useTheme");
@@ -237,13 +236,25 @@ describe("native task appearance", () => {
       },
     }));
     vi.stubGlobal("window", {
-      sandboxT3: {
-        getClientSettings: () => owned,
-        onState: (callback: () => void) => { stateChanged = callback; return removeNative; },
+      t3Host: {
+        appearance: { read: () => owned.themeAppearanceMode },
+        settings: {
+          read: () => owned,
+          write: async () => {},
+          subscribe: (callback: () => void) => {
+            stateChanged = callback;
+            return removeNative;
+          },
+        },
       },
       localStorage: createStorage(),
-      matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
-      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      matchMedia: () => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     });
     const { useTheme } = await import("./useTheme");
     useTheme();
@@ -256,21 +267,5 @@ describe("native task appearance", () => {
     expect(notified).toHaveBeenCalled();
     unsubscribe?.();
     expect(removeNative).toHaveBeenCalledOnce();
-  });
-});
-
-
-describe("Sandbox fresh appearance", () => {
-  it("defaults to dark on a light desktop and preserves saved light or system choices", async () => {
-    const localStorage = createStorage();
-    vi.stubGlobal("window", { localStorage, matchMedia: () => ({ matches: false }) });
-    const { readThemePreference, readAppearanceModePreference } = await import("./useTheme");
-    expect(readThemePreference()).toBe("dark");
-    expect(readAppearanceModePreference(readThemePreference())).toBe("dark");
-    for (const choice of ["light", "system"]) {
-      localStorage.setItem("t3code:theme", choice);
-      expect(readThemePreference()).toBe(choice);
-      expect(readAppearanceModePreference(readThemePreference())).toBe(choice);
-    }
   });
 });

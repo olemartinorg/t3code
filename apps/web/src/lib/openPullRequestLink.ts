@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -247,10 +248,44 @@ export function useOpenChangeRequestLink(
   );
 }
 
-export function useOpenPrLink(_threadRef?: ScopedThreadRef) {
-  return useCallback((event: MouseEvent<HTMLElement>, _prUrl: string, _targetThreadRef?: ScopedThreadRef) => {
-    // The real anchor owns navigation. Avoid activating the parent thread row.
-    event.stopPropagation();
-    return false;
-  }, []);
+export function useOpenPrLink(threadRef?: ScopedThreadRef) {
+  const openChangeRequest = useOpenChangeRequestLink(threadRef);
+  const openLink = useOpenLink(threadRef);
+  return useCallback(
+    (event: MouseEvent<HTMLElement>, prUrl: string, targetThreadRef?: ScopedThreadRef) => {
+      event.stopPropagation();
+      if (hostIntegration()?.externalNavigation && event.currentTarget instanceof HTMLAnchorElement)
+        return false;
+      const openInBrowser = shouldOpenPullRequestExternally(event);
+      const isAnchor =
+        event.currentTarget instanceof HTMLAnchorElement && event.currentTarget.href.length > 0;
+      // A real link already knows how to cmd/ctrl+click. Leave its default
+      // action alone so the browser (or Electron's window-open handler) opens
+      // the host. Buttons have no href, so they still go through openExternal.
+      if (openInBrowser && isAnchor) return false;
+
+      event.preventDefault();
+      if (
+        !hostIntegration()?.externalNavigation &&
+        !openInBrowser &&
+        openChangeRequest(event, prUrl, targetThreadRef)
+      )
+        return true;
+
+      // No project to show it in, so it is an ordinary link and follows the
+      // "Open links in" setting; the modifier still forces the system browser.
+      void openLink(prUrl, { event, threadRef: targetThreadRef }).catch((error: unknown) => {
+        console.error(error);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Unable to open pull request link",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      });
+      return false;
+    },
+    [openChangeRequest, openLink],
+  );
 }

@@ -1,3 +1,4 @@
+import { hostIntegration } from "./hostIntegration";
 /**
  * Thread-scoped right-panel surface state.
  *
@@ -210,7 +211,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
-  inlineOpen: false,
+  inlineOpen: hostIntegration()?.defaultThreadDetailsOpen ?? true,
   popoverOpen: false,
 };
 
@@ -341,7 +342,11 @@ const updateThreadPanelVisibilityMap = (
 ): Record<string, ThreadPanelVisibility> => {
   const current = byThreadKey[threadKey] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
   const next = updater(current);
-  if (!next.inlineOpen && !next.popoverOpen && !next.manualChoice) {
+  if (
+    next.inlineOpen === DEFAULT_THREAD_PANEL_VISIBILITY.inlineOpen &&
+    !next.popoverOpen &&
+    !next.manualChoice
+  ) {
     if (!(threadKey in byThreadKey)) return byThreadKey;
     const { [threadKey]: _removed, ...rest } = byThreadKey;
     return rest;
@@ -582,8 +587,16 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
           ).flatMap(([threadKey, value]) => {
             if (!value || typeof value !== "object" || !("inlineOpen" in value)) return [];
             return "manualChoice" in value && value.manualChoice === true
-              ? [[threadKey, { inlineOpen: value.inlineOpen === true,
-                  popoverOpen: "popoverOpen" in value && value.popoverOpen === true, manualChoice: true }]]
+              ? [
+                  [
+                    threadKey,
+                    {
+                      inlineOpen: value.inlineOpen === true,
+                      popoverOpen: "popoverOpen" in value && value.popoverOpen === true,
+                      manualChoice: true,
+                    },
+                  ],
+                ]
               : value.inlineOpen === false
                 ? [[threadKey, { inlineOpen: false, popoverOpen: false, manualChoice: true }]]
                 : [];

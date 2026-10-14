@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { MarkdownFindContext, useFindRevealRef } from "./chat/markdownFindContext";
 import {
   buildFileLinkParentSuffixByPath,
@@ -2996,7 +2997,137 @@ const CHAT_MARKDOWN_COMPONENTS = {
           href={href}
           target={isSameDocumentLink ? undefined : "_blank"}
           rel={isSameDocumentLink ? undefined : "noopener noreferrer"}
-          onClick={isSameDocumentLink && href ? event => handleMarkdownFragmentClick(event, href) : undefined}
+          onClick={(event) => {
+            onClick?.(event);
+            if (hostIntegration()?.externalNavigation && !isSameDocumentLink) return;
+            if (isSameDocumentLink && href) {
+              handleMarkdownFragmentClick(event, href);
+              return;
+            }
+            if (
+              href &&
+              faviconHost !== null &&
+              mediaKindFromPath(href) !== null &&
+              !event.defaultPrevented &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              !event.shiftKey &&
+              !event.altKey
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              openMarkdownMedia(
+                href,
+                undefined,
+                event.target instanceof HTMLImageElement
+                  ? event.target
+                  : event.currentTarget.querySelector("img"),
+              );
+              return;
+            }
+            // A link to a change request in a workspace project opens beside the
+            // conversation instead of in a browser: it is the thing being talked about, and
+            // the panel it opens offers the browser as one of its actions.
+            if (
+              !href ||
+              openChangeRequestLink(event, href, undefined, environmentId ?? undefined)
+            ) {
+              return;
+            }
+            // Anything else follows the "Open links in" setting. The system browser
+            // keeps the `_blank` the shell already handles; the in-app browser needs
+            // the click intercepted here. A modifier click is the way out of the
+            // in-app default, so it is left to the shell too.
+            if (event.defaultPrevented) return;
+            if (
+              resolveLinkTarget({
+                url: href,
+                event,
+                preference: linkTargetPreference,
+                canOpenInApp: canOpenInPreview,
+              }) !== "app"
+            ) {
+              // Chromium turns an Option/Alt-click into a download that never reaches the
+              // shell. On desktop, open the link here while the key is still down, so link
+              // routers such as Finicky can still read it.
+              if (isElectron && event.altKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                void readLocalApi()
+                  ?.shell.openExternal(href)
+                  .catch((cause) =>
+                    reportMarkdownActionFailure(
+                      { operation: "open-link-external", target: href },
+                      cause,
+                    ),
+                  );
+              }
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            // Keep the link here if saved settings could not be read.
+            void openExternalLinkInPreview(href).then((result) => {
+              if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+              reportMarkdownActionFailure(
+                { operation: "open-link-in-preview", target: href },
+                result.cause,
+              );
+              if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
+              void readLocalApi()?.shell.openExternal(href);
+            });
+          }}
+          onContextMenu={(event) => {
+            if (hostIntegration()?.externalNavigation || !href || !faviconHost) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const api = readLocalApi();
+            if (!api) return;
+            const threadLinkAction = !canOperateHost
+              ? undefined
+              : linkedThreadPullRequestFor(href) !== null
+                ? "unlink-from-thread"
+                : resolveThreadPullRequest(href) === null
+                  ? undefined
+                  : "link-to-thread";
+            void showExternalLinkContextMenu({
+              href,
+              canOpenInPreview,
+              threadLinkAction,
+              position: { x: event.clientX, y: event.clientY },
+              showContextMenu: (items, position) => api.contextMenu.show(items, position),
+              openInPreview: async (target) => {
+                const result = await openExternalLinkInPreview(target);
+                if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                  reportMarkdownActionFailure(
+                    { operation: "open-link-in-preview", target },
+                    result.cause,
+                  );
+                }
+              },
+              openExternal: (target) => api.shell.openExternal(target),
+              copyLink: (target) => writeTextToClipboard(target, "link"),
+              updateThreadLink: updateThreadPullRequestLink,
+              reportFailure: (operation, cause) => {
+                reportMarkdownActionFailure({ operation, target: href }, cause);
+                if (
+                  operation === "link-pull-request-to-thread" ||
+                  operation === "unlink-pull-request-from-thread"
+                ) {
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title:
+                        operation === "link-pull-request-to-thread"
+                          ? "Unable to link pull request"
+                          : "Unable to unlink pull request",
+                      description: cause instanceof Error ? cause.message : "The request failed.",
+                    }),
+                  );
+                }
+              },
+            });
+          }}
         >
           {faviconHost && hasText && !isPullRequestAutolink ? (
             <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>

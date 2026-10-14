@@ -1,4 +1,4 @@
-import { isSandboxEmbedded } from "../../sandboxEmbedding";
+import { hostIntegration } from "../../hostIntegration";
 import { SessionPermissions } from "./SessionPermissions";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
@@ -2033,7 +2033,7 @@ function CloudRemoteEnvironmentRows({
 }
 
 export function ConnectionsSettings() {
-  const sandboxEmbedded = isSandboxEmbedded();
+  const HostConnections = hostIntegration()?.Connections;
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { environments } = useEnvironments();
@@ -4066,21 +4066,8 @@ export function ConnectionsSettings() {
   return (
     <SettingsPageContainer>
       {primarySettings}
-      {sandboxEmbedded ? (
-        <SettingsSection title="Environments">
-          <SettingsRow
-            title="Workbench Connections"
-            description="Manage connected environments in Workbench."
-            control={
-              <Button
-                onClick={() => window.sandboxT3?.openConnections?.()}
-                disabled={!window.sandboxT3?.openConnections}
-              >
-                Open Connections
-              </Button>
-            }
-          />
-        </SettingsSection>
+      {HostConnections ? (
+        <HostConnections />
       ) : (
         <SettingsSection
           {...searchableSetting("remote-environments")}
@@ -4176,7 +4163,7 @@ export function ConnectionsSettings() {
           />
         </SettingsSection>
       )}
-      {!sandboxEmbedded && hasCloudPublicConfig() ? (
+      {!hostIntegration()?.managesConnections && hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}
           onCancel={() => setPendingT3ConnectRemoval(null)}
@@ -4187,7 +4174,7 @@ export function ConnectionsSettings() {
           }}
         />
       ) : null}
-      {!sandboxEmbedded ? (
+      {!hostIntegration()?.managesConnections ? (
         <>
           <LoadBalancingSettings environments={loadBalancingEnvironments} />
           <GitHubRoutingSettings environments={loadBalancingEnvironments} />

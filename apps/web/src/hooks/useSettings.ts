@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 /**
  * Environment-scoped settings hooks.
  *
@@ -177,7 +178,7 @@ async function hydrateClientSettings(): Promise<void> {
 }
 
 if (typeof window !== "undefined") {
-  window.sandboxT3?.onState?.(() => {
+  hostIntegration()?.settings?.subscribe(() => {
     // Use the native hydration owner; no raw storage inspection or synthetic writes.
     void clientSettingsPersistenceQueue.then(() => {
       clientSettingsHydrationGeneration++;

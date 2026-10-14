@@ -1,4 +1,4 @@
-import { sandboxComposerStorage, composerPersistenceChanged, composerPersistenceDirty } from "./sandboxComposerPersistence";
+import { hostIntegration } from "./hostIntegration";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
@@ -104,7 +104,8 @@ type ComposerPersistState =
   | PersistedComposerDraftStoreState;
 
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  sandboxComposerStorage() ?? (typeof localStorage !== "undefined" ? localStorage : createMemoryStorage()),
+  hostIntegration()?.composer?.storage ??
+    (typeof localStorage !== "undefined" ? localStorage : createMemoryStorage()),
   (value) =>
     JSON.stringify({
       state:
@@ -127,7 +128,10 @@ const composerPersistStorage: PersistStorage<ComposerPersistState> = {
     // so the cast mirrors the one zustand's createJSONStorage performs.
     return JSON.parse(raw) as StorageValue<ComposerPersistState>;
   },
-  setItem: (name, value) => { composerPersistenceDirty(); composerDebouncedStorage.setItem(name, value); },
+  setItem: (name, value) => {
+    hostIntegration()?.composer?.dirty();
+    composerDebouncedStorage.setItem(name, value);
+  },
   removeItem: (name) => composerDebouncedStorage.removeItem(name),
 };
 
@@ -4613,4 +4617,6 @@ export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): vo
   clearBackgroundDraftSubmissionByRef(threadRef);
 }
 
-composerPersistenceChanged(() => { void useComposerDraftStore.persist.rehydrate(); });
+hostIntegration()?.composer?.changed(() => {
+  void useComposerDraftStore.persist.rehydrate();
+});

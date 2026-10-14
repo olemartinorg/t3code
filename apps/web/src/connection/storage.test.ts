@@ -77,7 +77,7 @@ describe("ConnectionStorage.makeCatalogBackend", () => {
         .mockRejectedValue(new Error("must not read native credentials"));
       const setConnectionCatalog = vi.fn();
       vi.stubGlobal("window", {
-        sandboxT3: { version: 1, getVisible: () => true, onVisibility: () => () => {} },
+        t3Host: { managesConnections: true },
         desktopBridge: { getConnectionCatalog, setConnectionCatalog },
       });
       const database = {
@@ -88,7 +88,7 @@ describe("ConnectionStorage.makeCatalogBackend", () => {
       const backend = ConnectionStorage.makeCatalogBackend(fixedHandle(database));
       expect(yield* backend.read).toBeNull();
       const error = yield* Effect.flip(backend.write(JSON.stringify(emptyCatalog)));
-      expect(error.message).toContain("Connections are managed by Workbench");
+      expect(error.message).toContain("Connections are managed by the embedding host");
       expect(getConnectionCatalog).not.toHaveBeenCalled();
       expect(setConnectionCatalog).not.toHaveBeenCalled();
       expect(database.transaction).not.toHaveBeenCalled();

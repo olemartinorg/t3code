@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
@@ -38,11 +39,11 @@ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
-  theme: "dark",
-  resolvedTheme: "dark",
+  theme: "system",
+  resolvedTheme: "light",
   systemDark: false,
-  followSystem: false,
-  appearanceMode: "dark",
+  followSystem: true,
+  appearanceMode: "system",
   themeHalves: null,
 };
 
@@ -173,7 +174,7 @@ function isThemePreferenceMode(value: string | null): value is ThemePreferenceMo
 export function readAppearanceModePreference(theme: Theme): ThemePreferenceMode {
   if (typeof window !== "undefined") {
     try {
-      const owned = window.sandboxT3?.getClientSettings?.().themeAppearanceMode;
+      const owned = hostIntegration()?.appearance?.read();
       if (typeof owned === "string" && isThemePreferenceMode(owned)) return owned;
       const raw = window.localStorage.getItem(THEME_APPEARANCE_MODE_STORAGE_KEY);
       if (isThemePreferenceMode(raw)) return raw;
@@ -192,18 +193,7 @@ function writeAppearanceModePreference(appearanceMode: ThemePreferenceMode): voi
     // The legacy follow-system flag is read-only migration input now; the
     // mode key is the single source of truth.
     window.localStorage.setItem(THEME_APPEARANCE_MODE_STORAGE_KEY, appearanceMode);
-    if (window.sandboxT3?.saveClientSettings) {
-      // Use the same native settings hydration and serialized persistence owner.
-      // The browser value remains available if the task save fails.
-      void import("./useSettings").then(({ persistClientSettingsUpdate }) =>
-        persistClientSettingsUpdate(current => ({ ...current, themeAppearanceMode: appearanceMode })),
-      ).catch(() => {
-        void import("../components/ui/toast").then(({ toastManager }) => toastManager.add({
-          type: "error", title: "Appearance could not be saved for this task",
-          description: "Reopen settings and try again. Your browser choice is still available.",
-        }));
-      });
-    }
+    hostIntegration()?.appearance?.write(appearanceMode);
   } catch (cause) {
     throw new ThemeStorageError({
       operation: "write",
@@ -228,7 +218,7 @@ export function readThemePreference(): Theme {
   if (raw !== null && isKnownThemePreference(raw)) {
     return canonicalThemePreference(raw);
   }
-  return DEFAULT_THEME_SNAPSHOT.theme;
+  return hostIntegration()?.appearance?.defaultMode ?? DEFAULT_THEME_SNAPSHOT.theme;
 }
 
 export function writeThemePreference(theme: Theme): void {
@@ -507,7 +497,7 @@ function subscribe(listener: () => void): () => void {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
     window.addEventListener("storage", handleStorageChange);
-    const removeNative = window.sandboxT3?.onState?.(() => {
+    const removeNative = hostIntegration()?.settings?.subscribe(() => {
       applyTheme(getStored(), { suppressTransitions: true });
       emitChange();
     });

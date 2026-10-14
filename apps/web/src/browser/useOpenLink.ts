@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { AuthPreviewOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -52,7 +53,7 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
           readEnvironmentScope(targetThreadRef.environmentId, AuthPreviewOperateScope) &&
           canOpenLinksInApp(targetThreadRef),
       });
-      if (target === "app" && targetThreadRef) {
+      if (!hostIntegration()?.externalNavigation && target === "app" && targetThreadRef) {
         const result = await openUrlInPreview({ threadRef: targetThreadRef, url, openPreview });
         if (isAtomCommandInterrupted(result)) return;
         if (result._tag === "Success") {

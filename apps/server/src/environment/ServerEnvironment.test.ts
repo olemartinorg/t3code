@@ -80,7 +80,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
-  it.effect("publishes proven install ownership without enabling fork self-update", () =>
+  it.effect("publishes proven install ownership only for manually updated servers", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped();
@@ -112,8 +112,12 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, {}),
         );
-        expect(descriptor.capabilities.serverInstallation).toEqual({ kind: "npm-global", prefix });
-        expect(descriptor.capabilities.serverSelfUpdate).toBeUndefined();
+        expect(descriptor.capabilities.serverInstallation).toEqual(
+          mode === "web" ? { kind: "npm-global", prefix } : undefined,
+        );
+        expect(descriptor.capabilities.serverSelfUpdate).toBe(
+          mode === "web" ? undefined : "desktop-managed",
+        );
       }
     }),
   );
@@ -206,7 +210,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
 
       expect(first.environmentId).toBe(second.environmentId);
       expect(first.orchestrationProtocolVersion).toBe(ORCHESTRATION_PROTOCOL_VERSION);
-      expect(second.capabilities.sandboxContractVersion).toBe(1);
+      expect(second.capabilities.clientIntegrationVersion).toBe(1);
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.attachmentUploads).toBe(true);
@@ -270,7 +274,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
     }),
   );
 
-  it.effect("keeps fork self-update disabled even with a desktop control fd", () =>
+  it.effect("advertises desktopAppUpdate only with desktop mode and the control fd", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -293,15 +297,15 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         );
 
       const withFd = yield* describeWith({ mode: "desktop", desktopTelemetryControlFd: 5 });
-      expect(withFd.capabilities.serverSelfUpdate).toBeUndefined();
-      expect(withFd.capabilities.desktopAppUpdate).toBeUndefined();
-      expect(withFd.capabilities.serverSelfUpdateProgress).toBeUndefined();
+      expect(withFd.capabilities.serverSelfUpdate).toBe("desktop-managed");
+      expect(withFd.capabilities.desktopAppUpdate).toBe(true);
+      expect(withFd.capabilities.serverSelfUpdateProgress).toBe(true);
       // v2 recovery terminalizes running runs on restart, so continuation
       // stays unadvertised until the v2 runtime carries the markers.
       expect(withFd.capabilities.serverUpdateThreadContinuation).toBeUndefined();
 
       const withoutFd = yield* describeWith({ mode: "desktop" });
-      expect(withoutFd.capabilities.serverSelfUpdate).toBeUndefined();
+      expect(withoutFd.capabilities.serverSelfUpdate).toBe("desktop-managed");
       expect(withoutFd.capabilities.desktopAppUpdate).toBeUndefined();
       expect(withoutFd.capabilities.serverSelfUpdateProgress).toBeUndefined();
       expect(withoutFd.capabilities.serverUpdateThreadContinuation).toBeUndefined();

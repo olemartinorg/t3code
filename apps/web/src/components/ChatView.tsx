@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { useVisibleThreadVisit } from "../hooks/useVisibleThreadVisit";
 import { ChatCanvas } from "./chat/ChatCanvas";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
@@ -2404,11 +2405,11 @@ export default function ChatView(props: ChatViewProps) {
     ),
   );
 
-  const sandboxPanelPresent = rightPanelPresent || Boolean(activeThread && threadPanelOpen);
+  const hostPanelPresent = rightPanelPresent || Boolean(activeThread && threadPanelOpen);
   useEffect(() => {
-    window.sandboxT3?.reportPanelPresence?.(sandboxPanelPresent);
-    return () => window.sandboxT3?.reportPanelPresence?.(false);
-  }, [sandboxPanelPresent]);
+    hostIntegration()?.reportPanelPresence?.(hostPanelPresent);
+    return () => hostIntegration()?.reportPanelPresence?.(false);
+  }, [hostPanelPresent]);
 
   useEffect(() => {
     if (!activeThreadRef || !previewSessionsReady) return;
@@ -2938,8 +2939,6 @@ export default function ChatView(props: ChatViewProps) {
     },
     [openOrReuseProjectDraftThread],
   );
-
-
 
   // Once a thread selects an environment, never substitute the primary
   // environment's config while the selected environment is still loading.

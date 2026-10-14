@@ -39,10 +39,12 @@ import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
-import { useProjects, useThreadShells, useAllEnvironmentShellsBootstrapped } from "../state/entities";
+import {
+  useProjects,
+  useThreadShells,
+  useAllEnvironmentShellsBootstrapped,
+} from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { useComposerDraftStore } from "../composerDraftStore";
-import { hasNewThreadDraftContent } from "../sandboxConversationLaunch";
 import { useInitialConversationSidebar } from "../hooks/useInitialConversationSidebar";
 import {
   clampThreadSidebarWidth,
@@ -245,9 +247,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const shells = useThreadShells();
   const shellReady = useAllEnvironmentShellsBootstrapped();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const hasNewDraftContent = useComposerDraftStore(hasNewThreadDraftContent);
-  const initialSidebar = useInitialConversationSidebar({ pathname, shellReady,
-    environmentId: primaryEnvironmentId, shells, hasDraft: hasNewDraftContent });
+  const initialSidebar = useInitialConversationSidebar({
+    pathname,
+    shellReady,
+    environmentId: primaryEnvironmentId,
+    shells,
+  });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
@@ -327,7 +332,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <SidebarProvider
         className="h-dvh! min-h-0!"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
-        open={initialSidebar.open}
+        defaultOpen
+        {...(initialSidebar.open === undefined ? {} : { open: initialSidebar.open })}
         onOpenChange={initialSidebar.onOpenChange}
         style={sidebarProviderStyle}
       >

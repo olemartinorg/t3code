@@ -1,3 +1,4 @@
+import { hostIntegration } from "../../hostIntegration";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -772,7 +773,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     searchTerms: ["browser preview clicks buttons drag overlay capture"],
   },
-
+  {
+    id: "browser-link-target",
+    title: "Open links in",
+    to: "/settings/integrations",
+    searchTerms: ["links default browser in-app browser external open"],
+  },
   {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
@@ -1029,7 +1035,9 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
 
 /** Search keeps the selected target. A missing row can explain its owning scope instead. */
 export function getSettingsSearchTargetScope(targetId: string) {
-  const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
+  const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS.filter(
+    (item) => item.id !== "browser-link-target" || !hostIntegration()?.externalNavigation,
+  );
   const item =
     items.find((candidate) => candidate.id === targetId) ??
     items.find((candidate) => candidate.targetId === targetId);
@@ -1133,7 +1141,9 @@ export function searchableSetting(id: SettingsSearchItemId): {
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
-  const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
+  const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS.filter(
+    (item) => item.id !== "browser-link-target" || !hostIntegration()?.externalNavigation,
+  );
   return items.filter(
     (item) =>
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&

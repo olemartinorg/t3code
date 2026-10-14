@@ -19,7 +19,7 @@ import {
 import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
-import { isSandboxEmbedded } from "~/sandboxEmbedding";
+import { hostIntegration } from "~/hostIntegration";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -129,7 +129,7 @@ export function ServerUpdatesAction({
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const eligible = targets.filter(
     (target) =>
-      !(isSandboxEmbedded() && target.environmentId === primaryEnvironmentId) &&
+      !hostIntegration()?.updateNotice?.(target.environmentId) &&
       target.selfUpdate !== null &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
   );
@@ -291,9 +291,8 @@ export function ServerUpdateAction({
     });
   };
 
-  if (isSandboxEmbedded() && environmentId === primaryEnvironmentId) {
-    return <span className="text-muted-foreground text-xs">Update this task image in Sandbox.</span>;
-  }
+  const hostUpdateNotice = hostIntegration()?.updateNotice?.(environmentId);
+  if (hostUpdateNotice) return <>{hostUpdateNotice}</>;
 
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
@@ -398,9 +397,8 @@ export function OutdatedServerUpdateAction({
       pendingUpdateEnvironmentIds.delete(environmentId);
     }
   };
-  if (isSandboxEmbedded() && environmentId === primaryEnvironmentId) {
-    return <span className="text-muted-foreground text-xs">Update this task image in Sandbox.</span>;
-  }
+  const hostUpdateNotice = hostIntegration()?.updateNotice?.(environmentId);
+  if (hostUpdateNotice) return <>{hostUpdateNotice}</>;
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}

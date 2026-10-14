@@ -28,7 +28,7 @@ import {
   gitHubRoutingPermissionFor,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
-import { isSandboxEmbedded } from "../sandboxEmbedding";
+import { hostIntegration } from "../hostIntegration";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -396,12 +396,12 @@ export interface CatalogBackend {
 }
 
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
-  if (isSandboxEmbedded()) {
-    // Workbench owns profiles and credentials. Preserve the native browser catalog
-    // without reading it or letting a second client owner register environments.
+  if (hostIntegration()?.managesConnections) {
+    // A host-managed catalog must not be read or mutated by this client.
     return {
       read: Effect.succeed(null),
-      write: () => Effect.fail(catalogError("save", "Connections are managed by Workbench.")),
+      write: () =>
+        Effect.fail(catalogError("save", "Connections are managed by the embedding host.")),
     };
   }
   const bridge = window.desktopBridge;

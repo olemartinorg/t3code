@@ -1,8 +1,7 @@
-import { ProjectId } from "@t3tools/contracts";
-import { useSettingsProjectGroups } from "../components/settings/useSettingsProjectGroups";
+import { hostIntegration } from "../hostIntegration";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
@@ -20,9 +19,6 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { contentBearingNewThreadDraftId, soleOpenConversation } from "../sandboxConversationLaunch";
-import { useComposerDraftStore } from "../composerDraftStore";
-import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -36,7 +32,8 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedStaticOnboardingState />;
   }
 
-  return <IndexDraftLanding />;
+  const Landing = hostIntegration()?.Landing;
+  return Landing ? <Landing /> : <IndexDraftLanding />;
 }
 
 /**
@@ -49,23 +46,6 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
-  const navigate = useNavigate();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroups = useSettingsProjectGroups();
-  const externalTarget =
-    window.sandboxT3?.version === 1 && window.sandboxT3.getTargetKind?.() === "external-t3";
-  const projectIdValue = externalTarget ? (window.sandboxT3?.getProjectId?.() ?? null) : undefined;
-  const selectedProjectId =
-    projectIdValue == null ? projectIdValue : ProjectId.make(projectIdValue);
-  const openIntent = externalTarget ? (window.sandboxT3?.getOpenIntent?.() ?? "open") : "open";
-  const contentDraftId = useComposerDraftStore((state) =>
-    contentBearingNewThreadDraftId(
-      state,
-      externalTarget ? primaryEnvironmentId : undefined,
-      selectedProjectId,
-    ),
-  );
-  const sole = soleOpenConversation(threads, primaryEnvironmentId, selectedProjectId);
   const router = useRouter();
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
@@ -76,66 +56,14 @@ function IndexDraftLanding() {
   const mostRecentProject = useMemo(
     () =>
       bootstrapped
-        ? externalTarget
-          ? (projects.find(
-              (project) =>
-                project.environmentId === primaryEnvironmentId && project.id === selectedProjectId,
-            ) ?? null)
-          : (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
+        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
         : null,
-    [bootstrapped, projects, threads, externalTarget, primaryEnvironmentId, selectedProjectId],
+    [bootstrapped, projects, threads],
   );
 
   useEffect(() => {
-    if (!bootstrapped || primaryEnvironmentId === null || startingRef.current || !isStillOnIndex()) return;
-    if (openIntent === "settings") {
-      if (selectedProjectId === null) {
-        startingRef.current = true;
-        void navigate({
-          to: "/settings/general",
-          search: { machine: primaryEnvironmentId },
-          replace: true,
-        });
-        return;
-      }
-      const group = projectGroups.find((group) =>
-        group.memberProjects.some(
-          (member) =>
-            member.environmentId === primaryEnvironmentId && member.id === selectedProjectId,
-        ),
-      );
-      const member = group?.memberProjects.find(
-        (member) =>
-          member.environmentId === primaryEnvironmentId && member.id === selectedProjectId,
-      );
-      if (!group || !member) return;
-      startingRef.current = true;
-      void navigate({
-        to: "/settings/projects",
-        search: {
-          project: group.projectKey,
-          machine: primaryEnvironmentId,
-          checkout: member.physicalProjectKey,
-        },
-        replace: true,
-      });
-      return;
-    }
-    if (openIntent !== "new-conversation" && contentDraftId !== null) {
-      startingRef.current = true;
-      void navigate({ to: "/draft/$draftId", params: { draftId: contentDraftId }, replace: true });
-      return;
-    }
-    if (openIntent !== "new-conversation" && sole) {
-      startingRef.current = true;
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: { environmentId: sole.environmentId, threadId: sole.id },
-        replace: true,
-      });
-      return;
-    }
-    if (mostRecentProject === null || startingRef.current) {
+    // Starting a draft after the user has left would replace the page they picked.
+    if (mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
       return;
     }
     startingRef.current = true;
@@ -145,19 +73,7 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [
-    bootstrapped,
-    primaryEnvironmentId,
-    sole,
-    contentDraftId,
-    navigate,
-    handleNewThread,
-    mostRecentProject,
-    startState.retryRequest,
-    openIntent,
-    projectGroups,
-    selectedProjectId,
-  ]);
+  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
     return null;
@@ -173,24 +89,6 @@ function IndexDraftLanding() {
         }}
       />
     ) : null;
-  }
-  if (externalTarget) {
-    return (
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-        <Empty className="flex-1">
-          <EmptyHeader>
-            <EmptyTitle>
-              {selectedProjectId === null ? "No project" : "Project unavailable"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {selectedProjectId === null
-                ? "Select an existing conversation in Workbench, or choose a project to start a new conversation."
-                : "The selected project is no longer available on this environment."}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      </SidebarInset>
-    );
   }
   // First-run routing to the welcome wizard happens in FirstRunGate at the
   // root, before this route ever renders.

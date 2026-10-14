@@ -1,4 +1,10 @@
-import { ClientSettingsSchema, type ConfirmDialogOptions, type ContextMenuItem, type LocalApi } from "@t3tools/contracts";
+import { hostIntegration } from "./hostIntegration";
+import {
+  ClientSettingsSchema,
+  type ConfirmDialogOptions,
+  type ContextMenuItem,
+  type LocalApi,
+} from "@t3tools/contracts";
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
@@ -7,7 +13,6 @@ import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientP
 import * as Schema from "effect/Schema";
 
 let cachedApi: LocalApi | undefined;
-let settingsBaseline: Record<string, unknown> = {};
 
 function createBrowserLocalApi(): LocalApi {
   return {
@@ -65,23 +70,15 @@ function createBrowserLocalApi(): LocalApi {
     },
     persistence: {
       getClientSettings: async () => {
-        if (window.sandboxT3?.getClientSettings) {
-          settingsBaseline = window.sandboxT3.getClientSettings();
-          return Schema.decodeSync(ClientSettingsSchema)(settingsBaseline);
-        }
+        if (hostIntegration()?.settings)
+          return Schema.decodeSync(ClientSettingsSchema)(hostIntegration()!.settings!.read());
         if (window.desktopBridge) {
           return window.desktopBridge.getClientSettings();
         }
         return readBrowserClientSettings();
       },
       setClientSettings: async (settings) => {
-        if (window.sandboxT3?.saveClientSettings) {
-          let result = await window.sandboxT3.saveClientSettings(settingsBaseline, settings);
-          if (result.conflict) throw new Error("Task preferences changed in another Workbench. Reopen settings before saving again.");
-          if (!result.saved) throw new Error("Task preferences could not be saved");
-          settingsBaseline = settings;
-          return;
-        }
+        if (hostIntegration()?.settings) return hostIntegration()!.settings!.write(settings);
         if (window.desktopBridge) {
           return window.desktopBridge.setClientSettings(settings);
         }

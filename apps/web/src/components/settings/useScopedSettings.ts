@@ -1,3 +1,4 @@
+import { hostIntegration } from "../../hostIntegration";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import {
@@ -94,32 +95,12 @@ function useRunScopedPlan() {
         },
         persistClientSettingsPatch,
       ).then(async ({ failedEnvironments, savedEnvironments, savedEnvironmentCount }) => {
-        const bridge = window.sandboxT3;
-        if (
-          modelDefault !== undefined &&
-          bridge?.getTargetKind?.() === "managed-task" &&
-          bridge.saveModelDefault
-        ) {
-          try {
-            const localEnvironment = bridge.getEnvironmentId?.();
-            if (
-              localEnvironment &&
-              plan.serverWrites.some((write) => write.environmentId === localEnvironment) &&
-              !failedEnvironments.some((write) => write.environmentId === localEnvironment)
-            ) {
-              const result = await bridge.saveModelDefault(localEnvironment, modelDefault);
-              if (!result.saved) throw new Error("Future task model default was not saved");
-              toastManager.add({ type: "success", title: "Default saved for future tasks" });
-            }
-          } catch {
-            toastManager.add({
-              type: "error",
-              title: "Task default saved; future-task default not saved",
-              description:
-                "The current task keeps its setting. Retry the explicit default-model setting to save it for future tasks.",
-            });
-          }
-        }
+        if (modelDefault !== undefined)
+          await hostIntegration()?.settings?.modelSaved?.({
+            model: modelDefault,
+            writtenEnvironments: plan.serverWrites.map((write) => write.environmentId),
+            failedEnvironments: failedEnvironments.map((write) => write.environmentId),
+          });
         if (failedEnvironments.length === 0) return;
         toastManager.add({
           type: "error",

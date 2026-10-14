@@ -332,21 +332,34 @@ export function terminalLinkAtPositionWithRange(
 }
 
 /** Scan each soft-wrapped logical line once, preserving the complete URL and cell range. */
-export function terminalExternalLinksInRows(rows: GhosttySnapshot["rowData"]): TerminalLinkWithRange[] {
+export function terminalExternalLinksInRows(
+  rows: GhosttySnapshot["rowData"],
+): TerminalLinkWithRange[] {
   const links: TerminalLinkWithRange[] = [];
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     if (rows[rowIndex]?.isWrapContinuation) continue;
     const wrapped = collectWrappedTerminalLinkLine(rowIndex + 1, (index) => {
       const row = rows[index];
-      return row ? { isWrapped: row.isWrapContinuation, translateToString: (trimRight = false) => terminalRowText(row, trimRight) } : null;
+      return row
+        ? {
+            isWrapped: row.isWrapContinuation,
+            translateToString: (trimRight = false) => terminalRowText(row, trimRight),
+          }
+        : null;
     });
     if (!wrapped) continue;
     for (const match of extractTerminalLinks(wrapped.text)) {
       if (!/^https?:\/\//iu.test(match.text)) continue;
-      const segment = wrapped.segments.find(value => match.start >= value.startIndex && match.start < value.endIndex);
+      const segment = wrapped.segments.find(
+        (value) => match.start >= value.startIndex && match.start < value.endIndex,
+      );
       const row = segment ? rows[segment.bufferLineNumber - 1] : undefined;
       if (!segment || !row) continue;
-      const link = terminalLinkAtPositionWithRange(rows, segment.bufferLineNumber - 1, terminalColumnAtOffset(row, match.start - segment.startIndex));
+      const link = terminalLinkAtPositionWithRange(
+        rows,
+        segment.bufferLineNumber - 1,
+        terminalColumnAtOffset(row, match.start - segment.startIndex),
+      );
       if (link) links.push(link);
     }
   }
@@ -570,6 +583,7 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly onSelectionChange: () => void;
   readonly beforeKey: (event: KeyboardEvent) => boolean;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
+  readonly externalLinkAnchors?: boolean;
   readonly canActivateLink?: (text: string) => boolean;
   /**
    * A right-click the running application did not claim through mouse
@@ -2051,7 +2065,10 @@ export class GhosttyTerminalSurface {
     return this.findLinkAtCell(cell);
   }
 
-  private findLinkAtCell(cell: { x: number; y: number }, fallback?: TerminalLinkWithRange | null): TerminalLinkWithRange | null {
+  private findLinkAtCell(
+    cell: { x: number; y: number },
+    fallback?: TerminalLinkWithRange | null,
+  ): TerminalLinkWithRange | null {
     if (!this.snapshot) return null;
     const explicitHyperlink = this.core.hyperlinkAt(cell.x, cell.y);
     if (explicitHyperlink) {
@@ -2084,21 +2101,33 @@ export class GhosttyTerminalSurface {
         range: { start, end },
       };
     }
-    return fallback === undefined ? terminalLinkAtPositionWithRange(this.snapshot.rowData, cell.y, cell.x) : fallback;
+    return fallback === undefined
+      ? terminalLinkAtPositionWithRange(this.snapshot.rowData, cell.y, cell.x)
+      : fallback;
   }
 
   /** Real anchors cover external URL cells; canvas/file links retain terminal behavior. */
   private updateExternalLinkAnchors(): void {
+    if (!this.options.externalLinkAnchors) return;
     const retained = new Set<string>();
     const plainLinks = new Map<number, TerminalLinkWithRange>();
     for (const link of terminalExternalLinksInRows(this.snapshot?.rowData ?? [])) {
-      for (let cell = link.range.start.y * this.cols + link.range.start.x; cell <= link.range.end.y * this.cols + link.range.end.x; cell += 1) plainLinks.set(cell, link);
+      for (
+        let cell = link.range.start.y * this.cols + link.range.start.x;
+        cell <= link.range.end.y * this.cols + link.range.end.x;
+        cell += 1
+      )
+        plainLinks.set(cell, link);
     }
     for (let index = 0; index < this.cols * this.rows; index += 1) {
-      const link = this.findLinkAtCell({ x: index % this.cols, y: Math.floor(index / this.cols) }, plainLinks.get(index) ?? null);
+      const link = this.findLinkAtCell(
+        { x: index % this.cols, y: Math.floor(index / this.cols) },
+        plainLinks.get(index) ?? null,
+      );
       if (!link) continue;
       index = link.range.end.y * this.cols + link.range.end.x;
-      if (!/^https?:\/\//iu.test(link.text) || this.options.canActivateLink?.(link.text) === false) continue;
+      if (!/^https?:\/\//iu.test(link.text) || this.options.canActivateLink?.(link.text) === false)
+        continue;
       for (let row = link.range.start.y; row <= link.range.end.y; row += 1) {
         const start = row === link.range.start.y ? link.range.start.x : 0;
         const end = row === link.range.end.y ? link.range.end.x : this.cols - 1;
@@ -2113,7 +2142,8 @@ export class GhosttyTerminalSurface {
           anchor.draggable = false;
           anchor.setAttribute("aria-label", `Open ${link.text}`);
           anchor.textContent = link.text;
-          anchor.style.cssText = "position:absolute;color:transparent;overflow:hidden;white-space:nowrap;cursor:pointer;";
+          anchor.style.cssText =
+            "position:absolute;color:transparent;overflow:hidden;white-space:nowrap;cursor:pointer;";
           let press: { x: number; y: number; count: number } | null = null;
           let selected = false;
           anchor.addEventListener("pointerdown", (event) => {
@@ -2123,7 +2153,13 @@ export class GhosttyTerminalSurface {
             } else if (event.button === 0) {
               const count = this.recordSelectionClick(event);
               press = { x: event.clientX, y: event.clientY, count };
-              if (count > 1 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+              if (
+                count > 1 &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                !event.shiftKey
+              ) {
                 event.preventDefault();
                 this.focus();
                 this.beginSelection(event, count);
@@ -2135,7 +2171,12 @@ export class GhosttyTerminalSurface {
           anchor.addEventListener("pointermove", (event) => {
             if (shouldReportTerminalMouse(this.core.isMouseAnyEventTracking(), event)) {
               this.onPointerMove(event);
-            } else if (press && (event.buttons & 1) !== 0 && Math.hypot(event.clientX - press.x, event.clientY - press.y) > TERMINAL_LINK_DRAG_THRESHOLD_PX) {
+            } else if (
+              press &&
+              (event.buttons & 1) !== 0 &&
+              Math.hypot(event.clientX - press.x, event.clientY - press.y) >
+                TERMINAL_LINK_DRAG_THRESHOLD_PX
+            ) {
               event.preventDefault();
               this.focus();
               this.clearHoveredLink();
@@ -2146,14 +2187,20 @@ export class GhosttyTerminalSurface {
               selected = true;
             }
           });
-          anchor.addEventListener("pointerup", () => { press = null; });
-          anchor.addEventListener("pointercancel", () => { press = null; });
+          anchor.addEventListener("pointerup", () => {
+            press = null;
+          });
+          anchor.addEventListener("pointercancel", () => {
+            press = null;
+          });
           anchor.addEventListener("click", (event) => {
-            if (selected || shouldReportTerminalMouse(this.core.isMouseTracking(), event)) event.preventDefault();
+            if (selected || shouldReportTerminalMouse(this.core.isMouseTracking(), event))
+              event.preventDefault();
             selected = false;
           });
           anchor.addEventListener("contextmenu", (event) => {
-            if (shouldReportTerminalMouse(this.core.isMouseTracking(), event)) event.preventDefault();
+            if (shouldReportTerminalMouse(this.core.isMouseTracking(), event))
+              event.preventDefault();
           });
           anchor.addEventListener("wheel", this.onWheel, { passive: false });
           this.externalLinkAnchors.set(key, anchor);
@@ -2167,7 +2214,10 @@ export class GhosttyTerminalSurface {
       }
     }
     for (const [key, anchor] of this.externalLinkAnchors) {
-      if (!retained.has(key)) { anchor.remove(); this.externalLinkAnchors.delete(key); }
+      if (!retained.has(key)) {
+        anchor.remove();
+        this.externalLinkAnchors.delete(key);
+      }
     }
   }
 

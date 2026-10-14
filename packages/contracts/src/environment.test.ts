@@ -15,16 +15,22 @@ const descriptor = {
 
 describe("ExecutionEnvironmentDescriptor", () => {
   it("distinguishes fork contracts from an upstream server without inventing a default", () => {
-    expect(decodeDescriptor(descriptor).capabilities.sandboxContractVersion).toBeUndefined();
+    expect(decodeDescriptor(descriptor).capabilities.clientIntegrationVersion).toBeUndefined();
     for (const version of [1, 2]) {
-      expect(decodeDescriptor({
-        ...descriptor, capabilities: { ...descriptor.capabilities, sandboxContractVersion: version },
-      }).capabilities.sandboxContractVersion).toBe(version);
+      expect(
+        decodeDescriptor({
+          ...descriptor,
+          capabilities: { ...descriptor.capabilities, clientIntegrationVersion: version },
+        }).capabilities.clientIntegrationVersion,
+      ).toBe(version);
     }
     for (const version of [0, -1, 1.5, "1"]) {
-      expect(() => decodeDescriptor({
-        ...descriptor, capabilities: { ...descriptor.capabilities, sandboxContractVersion: version },
-      })).toThrow();
+      expect(() =>
+        decodeDescriptor({
+          ...descriptor,
+          capabilities: { ...descriptor.capabilities, clientIntegrationVersion: version },
+        }),
+      ).toThrow();
     }
   });
 

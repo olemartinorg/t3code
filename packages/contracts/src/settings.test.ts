@@ -704,10 +704,10 @@ describe("ClientSettings composer collapse", () => {
 });
 
 describe("ServerSettings thread settlement", () => {
-  it("defaults both automatic settlement rules off", () => {
+  it("defaults merge settlement on and inactivity settlement to three days", () => {
     const settings = decodeServerSettings({});
-    expect(settings.sidebarAutoSettleAfterDays).toBeNull();
-    expect(settings.sidebarAutoSettleOnMerge).toBe(false);
+    expect(settings.sidebarAutoSettleAfterDays).toBe(3);
+    expect(settings.sidebarAutoSettleOnMerge).toBe(true);
   });
 
   it("allows both automatic rules to be disabled", () => {

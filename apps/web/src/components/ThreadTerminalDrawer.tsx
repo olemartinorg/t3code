@@ -1,3 +1,4 @@
+import { hostIntegration } from "../hostIntegration";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
@@ -87,6 +88,7 @@ import { previewEnvironment } from "../state/preview";
 import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
 import { useEnvironmentScope } from "../state/session";
+import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import {
@@ -607,6 +609,7 @@ export function TerminalViewport({
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
+        externalLinkAnchors: hostIntegration()?.externalNavigation === true,
         // The surface listens from construction, so a right-click can land
         // while `create` is still awaiting WASM — before the handler below it
         // exists. The ref is only assigned once that setup has run.
@@ -907,8 +910,41 @@ export function TerminalViewport({
         if (!canActivateTerminalLink(text)) return;
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
-        // HTTP(S) destinations are ordinary anchors owned by the terminal surface.
-        if (isTerminalUrl(text)) return;
+        if (isTerminalUrl(text)) {
+          if (hostIntegration()?.externalNavigation) return;
+          if (!localApi) {
+            writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
+            return;
+          }
+          const fallbackToBrowser = () => {
+            void localApi.shell.openExternal(text).catch((error: unknown) => {
+              writeSystemMessage(
+                latestTerminal,
+                error instanceof Error ? error.message : "Unable to open link",
+              );
+            });
+          };
+          if (!readEnvironmentScope(environmentId, AuthPreviewOperateScope)) {
+            fallbackToBrowser();
+            return;
+          }
+          void openTerminalLinkInPreview({
+            url: text,
+            threadRef,
+            openPreview,
+            fallbackToBrowser,
+            forceBrowser: event.metaKey || event.ctrlKey,
+          }).catch((error: unknown) => {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Unable to open link",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          });
+          return;
+        }
         const target = resolvePathLinkTarget(text, cwd);
         void (async () => {
           const result = await openTerminalPath(target);

@@ -196,6 +196,7 @@ export const make = Effect.gen(function* () {
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
     desktopManaged: serverConfig.mode === "desktop",
     launcherManaged: launcher.managed,
+    externallyManaged: (yield* HostProcess.Environment).T3CODE_EXTERNALLY_MANAGED === "1",
   });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
   // Static is correct: the control fd is known at bootstrap, and the desktop
@@ -216,7 +217,7 @@ export const make = Effect.gen(function* () {
     serverVersion: packageJson.version,
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
-      sandboxContractVersion: 1,
+      clientIntegrationVersion: 1,
       repositoryIdentity: true,
       connectionProbe: true,
       attachmentUploads: true,
