@@ -1,4 +1,5 @@
 export { ThreadAgentsSheet } from "../features/threads/ThreadAgentsSheet";
+export { RenderFailureView } from "../components/RenderErrorBoundary";
 export { HardwareKeyboardCommandProvider } from "../features/keyboard/HardwareKeyboardCommandProvider";
 export { OverlayPortalHost } from "../components/OverlayPortal";
 export {
