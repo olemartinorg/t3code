@@ -117,7 +117,8 @@ function threadDetailToShell(
         createdAt: request.createdAt,
         responseCapability: request.responseCapability.type,
       }))
-      .toSorted(
+      // map created a fresh array; sort it directly because Hermes lacks toSorted.
+      .sort(
         (left, right) =>
           DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt) ||
           String(left.id).localeCompare(String(right.id)),
