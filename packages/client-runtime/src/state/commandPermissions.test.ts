@@ -13,6 +13,7 @@ import {
   ThreadId,
   EnvironmentId,
   ScheduledTaskId,
+  ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   type AuthSessionState,
 } from "@t3tools/contracts";
@@ -59,6 +60,26 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
+  it.effect("requires operate permission for desktop draft presence in the destination", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        for (const method of [
+          ORCHESTRATION_V2_WS_METHODS.openDraftPresenceSource,
+          ORCHESTRATION_V2_WS_METHODS.replaceDraftPresence,
+        ]) {
+          const command = createCommandPermissions(runtime, method);
+          registry.set(sessions(env), AsyncResult.success(grant(false)));
+          expect(registry.get(command.permissionAtom(env))).toBe(false);
+          expect((yield* command.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+            "EnvironmentAuthorizationError",
+          );
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(command.permissionAtom(env))).toBe(true);
+        }
+      }),
+    ),
+  );
   it.effect("requires the destination settings grant to run storage cleanup", () =>
     Effect.scoped(
       Effect.gen(function* () {

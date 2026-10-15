@@ -1,3 +1,4 @@
+import { emptyDraftPresenceLayer } from "./orchestration-v2/DraftPresence.test-fixtures.ts";
 import { assert, it } from "@effect/vitest";
 import {
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -253,7 +254,7 @@ const ReplayTestLayer = OrchestrationEventStore.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
 );
 
-it.live.each(["thread", "shell"] as const)(
+it.live.each(["thread", "shell", "shell-presence"] as const)(
   "%s resume skips unknown types, synchronizes, and receives the live tail",
   (scope) =>
     Effect.gen(function* () {
@@ -324,6 +325,7 @@ it.live.each(["thread", "shell"] as const)(
           : yield* subscribeOrchestrationV2Shell({
               afterSequence: before!.sequence,
               requestCompletionMarker: true,
+              includeDraftPresence: scope === "shell-presence",
             }).pipe(Effect.flatMap(consume));
       });
       const items = yield* subscription.pipe(
@@ -356,11 +358,19 @@ it.live.each(["thread", "shell"] as const)(
         items.map((item) => item.kind),
         scope === "thread"
           ? ["event", "synchronized", "event"]
-          : ["project.updated", "synchronized", "project.updated"],
+          : [
+              ...(scope === "shell-presence" ? ["draft-presence.updated"] : []),
+              "project.updated",
+              "synchronized",
+              "project.updated",
+            ],
       );
       assert.deepEqual(
         items.flatMap((item) => (item.sequence === undefined ? [] : [item.sequence])),
         [after!.sequence, liveSequence],
       );
-    }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(ReplayTestLayer, emptyDraftPresenceLayer)),
+    ),
 );

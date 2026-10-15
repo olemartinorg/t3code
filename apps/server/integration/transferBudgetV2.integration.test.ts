@@ -1,3 +1,4 @@
+import { emptyDraftPresenceLayer } from "../src/orchestration-v2/DraftPresence.test-fixtures.ts";
 // @effect-diagnostics nodeBuiltinImport:off - Measures real local HTTP/WebSocket sockets.
 import * as NodeHttp from "node:http";
 import { assert, it } from "@effect/vitest";
@@ -111,6 +112,7 @@ const layerEnrichment = Layer.unwrap(
 );
 // The transfer history has no project events, so shell streams never read a project shell.
 const layerServices = layerManagement.pipe(
+  Layer.provideMerge(emptyDraftPresenceLayer),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(Layer.mock(ProjectService.ProjectService)({})),
   Layer.provideMerge(layerEnrichment),

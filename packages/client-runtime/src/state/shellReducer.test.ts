@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { v2Project, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
@@ -27,6 +27,24 @@ const otherIdentity = {
 };
 
 describe("applyShellStreamEvent", () => {
+  it("replaces independent metadata without advancing the activity cursor or thread objects", () => {
+    const draftPresence = {
+      environmentId: EnvironmentId.make("desktop"),
+      revision: 2,
+      projects: [],
+    };
+    const original = { ...v2ShellSnapshot, snapshotSequence: 10 };
+    const next = applyShellStreamEvent(original, { kind: "draft-presence.updated", draftPresence });
+    expect(next.snapshotSequence).toBe(10);
+    expect(next.threads).toBe(original.threads);
+    expect(next.draftPresence).toEqual(draftPresence);
+    expect(
+      applyShellStreamEvent(next, {
+        kind: "draft-presence.updated",
+        draftPresence: { ...draftPresence, revision: 1 },
+      }),
+    ).toBe(next);
+  });
   it("updates a thread in place without moving its siblings", () => {
     const threads = ["a", "b", "c"].map((id) => ({ ...v2ThreadShell, id: ThreadId.make(id) }));
     const updated = { ...threads[1]!, title: "Streaming" };

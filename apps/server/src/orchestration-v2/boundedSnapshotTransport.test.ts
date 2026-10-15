@@ -1,3 +1,4 @@
+import { emptyDraftPresenceLayer } from "./DraftPresence.test-fixtures.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
   AuthOrchestrationReadScope,
@@ -225,6 +226,7 @@ const seed = Effect.gen(function* () {
 // Bounded subscriptions without afterSequence never read the event store, and
 // thread routes never touch projects.
 const TestLayer = Layer.mergeAll(
+  emptyDraftPresenceLayer,
   management,
   Layer.effectDiscard(seed),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
