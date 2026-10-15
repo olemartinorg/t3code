@@ -1,3 +1,9 @@
+import {
+  ComposerDraftPresence,
+  ComposerDraftPresenceSource,
+  OpenComposerDraftPresenceResult,
+  ReplaceComposerDraftPresenceInput,
+} from "./draftPresence.ts";
 import { OrchestrationMessageContext } from "./composerContext.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -2044,10 +2050,15 @@ export type OrchestrationV2ThreadShellSnapshot = typeof OrchestrationV2ThreadShe
 export const OrchestrationV2ShellSnapshot = Schema.Struct({
   ...OrchestrationV2ThreadShellSnapshot.fields,
   projects: Schema.Array(OrchestrationProjectShell),
+  draftPresence: Schema.optionalKey(ComposerDraftPresence),
 });
 export type OrchestrationV2ShellSnapshot = typeof OrchestrationV2ShellSnapshot.Type;
 
 export const OrchestrationV2ShellStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("draft-presence.updated"),
+    draftPresence: ComposerDraftPresence,
+  }),
   Schema.Struct({
     kind: Schema.Literal("synchronized"),
   }),
@@ -3286,6 +3297,8 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   launchThread: "orchestration.launchThread",
   subscribeArchivedShell: "orchestration.subscribeArchivedShell",
   subscribeShell: "orchestration.subscribeShell",
+  openDraftPresenceSource: "orchestration.openDraftPresenceSource",
+  replaceDraftPresence: "orchestration.replaceDraftPresence",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
 
@@ -3358,6 +3371,8 @@ export type OrchestrationV2GetThreadProjectionInput =
   typeof OrchestrationV2GetThreadProjectionInput.Type;
 
 export const OrchestrationV2SubscribeShellInput = Schema.Struct({
+  /** Older clients cannot decode metadata events, so delivery is explicitly admitted. */
+  includeDraftPresence: Schema.optionalKey(Schema.Boolean),
   /**
    * When provided, the server skips the initial full shell snapshot and instead
    * replays shell events after this sequence before streaming live events.
@@ -3769,6 +3784,11 @@ export class OrchestrationV2SearchThreadError extends Schema.TaggedError<Orchest
 }
 
 export const OrchestrationV2RpcSchemas = {
+  openDraftPresenceSource: {
+    input: ComposerDraftPresenceSource,
+    output: OpenComposerDraftPresenceResult,
+  },
+  replaceDraftPresence: { input: ReplaceComposerDraftPresenceInput, output: Schema.Void },
   searchThread: {
     input: OrchestrationV2SearchThreadInput,
     output: OrchestrationV2SearchThreadResult,

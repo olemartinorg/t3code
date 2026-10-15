@@ -218,6 +218,7 @@ export const make = Effect.gen(function* () {
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
       clientIntegrationVersion: 1,
+      composerDraftPresence: 1,
       repositoryIdentity: true,
       connectionProbe: true,
       attachmentUploads: true,

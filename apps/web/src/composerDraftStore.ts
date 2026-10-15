@@ -364,6 +364,7 @@ const PersistedComposerDraftStoreStorage = Schema.Struct({
   version: Schema.Number,
   state: PersistedComposerDraftStoreState,
 });
+const decodeSavedComposerDrafts = Schema.decodeUnknownSync(PersistedComposerDraftStoreStorage);
 
 /**
  * Composer content keyed by either a draft session (`DraftId`) or a real server
@@ -430,7 +431,21 @@ export interface ComposerThreadDraftState {
  * reset to defaults).
  */
 export function composerDraftHasUserContent(
-  draft: ComposerThreadDraftState | null | undefined,
+  draft:
+    | ({ readonly prompt: string } & {
+        readonly [
+          K in
+            | "images"
+            | "files"
+            | "persistedAttachments"
+            | "terminalContexts"
+            | "previewAnnotations"
+            | "reviewComments"
+            | "threadContexts"
+        ]: readonly unknown[];
+      })
+    | null
+    | undefined,
 ): boolean {
   if (!draft) {
     return false;
@@ -4407,6 +4422,48 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
 );
 
 export const useComposerDraftStore = composerDraftStore;
+
+/** Retry the current local save before accepting it as a presence replacement. */
+export function flushComposerDrafts(): void {
+  composerPersistStorage.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+    state: { capturedState: useComposerDraftStore.getState() },
+    version: COMPOSER_DRAFT_STORAGE_VERSION,
+  });
+  composerDebouncedStorage.flush();
+}
+
+/** Inspect this profile's committed document without changing any window's editor. */
+export function readSavedComposerDraftPresenceState() {
+  const raw = localStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+  const saved =
+    raw === null
+      ? EMPTY_PERSISTED_DRAFT_STORE_STATE
+      : decodeSavedComposerDrafts(JSON.parse(raw)).state;
+  return {
+    draftsByThreadKey: Object.fromEntries(
+      Object.entries(saved.draftsByThreadKey).map(([key, draft]) => [
+        key,
+        {
+          prompt: draft.prompt,
+          images: [],
+          files: draft.files ?? [],
+          persistedAttachments: draft.attachments,
+          terminalContexts: draft.terminalContexts ?? [],
+          previewAnnotations: draft.previewAnnotations ?? [],
+          reviewComments: draft.reviewComments ?? [],
+          threadContexts: draft.threadContexts ?? [],
+        },
+      ]),
+    ),
+    draftThreadsByThreadKey: Object.fromEntries(
+      Object.entries(saved.draftThreadsByThreadKey).map(([key, draft]) => [
+        key,
+        toHydratedDraftThreadState(draft),
+      ]),
+    ),
+    backgroundSubmissionThreadKeys: useComposerDraftStore.getState().backgroundSubmissionThreadKeys,
+  };
+}
 
 export function beginBackgroundDraftSubmissionByRef(threadRef: ScopedThreadRef): void {
   const threadKey = scopedThreadKey(threadRef);

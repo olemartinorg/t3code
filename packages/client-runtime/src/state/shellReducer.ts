@@ -140,6 +140,16 @@ export function applyShellStreamEvent(
     { readonly kind: "snapshot" } | { readonly kind: "synchronized" }
   >,
 ): OrchestrationV2ShellSnapshot {
+  if (event.kind === "draft-presence.updated") {
+    const previous = snapshot.draftPresence;
+    if (
+      previous &&
+      previous.environmentId === event.draftPresence.environmentId &&
+      previous.revision >= event.draftPresence.revision
+    )
+      return snapshot;
+    return { ...snapshot, draftPresence: event.draftPresence };
+  }
   if (event.sequence <= snapshot.snapshotSequence) return snapshot;
 
   switch (event.kind) {
