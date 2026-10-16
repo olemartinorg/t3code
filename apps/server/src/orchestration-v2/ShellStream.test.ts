@@ -6,7 +6,7 @@ import type {
   OrchestrationV2StoredEvent,
   OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -118,6 +118,13 @@ describe("loadShellSnapshotParts", () => {
           }),
         );
       const thread = shellFixture({});
+      const draftPresence = {
+        environmentId: EnvironmentId.make("shell-environment"),
+        revision: 3,
+        projects: [
+          { projectId: ProjectId.make("project-a"), threadIds: [], hasProjectDraft: true },
+        ],
+      };
 
       const snapshot = yield* loadShellSnapshotParts({
         sql,
@@ -132,16 +139,19 @@ describe("loadShellSnapshotParts", () => {
         ),
         listProjects: step("list projects", []),
         latestSequence: step("latest sequence", 7),
+        draftPresence: step("draft presence", draftPresence),
       });
 
       expect(steps).toEqual([
         "read threads:in transaction",
         "list projects:in transaction",
         "latest sequence:in transaction",
+        "draft presence:in transaction",
         "decode threads:out of transaction",
       ]);
       expect(snapshot.snapshotSequence).toBe(7);
       expect(snapshot.threads.threads).toEqual([thread]);
+      expect(snapshot.draftPresence).toEqual(draftPresence);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

@@ -53,6 +53,35 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
+  it.effect("adds the failure lookup index without changing released draft presence", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 62 });
+      yield* sql`
+        INSERT INTO composer_draft_presence_sources
+          (source_id, token_hash, writer_epoch, revision, entries_json)
+        VALUES ('retained-source', 'retained-hash', 4, 7, '[{"projectId":"project-a","draftId":"draft-a"}]')
+      `;
+      yield* sql`UPDATE composer_draft_presence_revision SET revision = 9 WHERE singleton = 1`;
+      const sources = yield* sql`SELECT * FROM composer_draft_presence_sources`;
+
+      assert.deepStrictEqual(yield* runMigrations(), [[63, "ThreadFailureLookupIndex"]]);
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.deepStrictEqual(yield* sql`SELECT * FROM composer_draft_presence_sources`, sources);
+      assert.deepStrictEqual(yield* sql`SELECT revision FROM composer_draft_presence_revision`, [
+        { revision: 9 },
+      ]);
+      assert.deepStrictEqual(
+        yield* sql`
+          SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name = 'orchestration_v2_projection_turn_items_failed_error_idx'
+        `,
+        [{ name: "orchestration_v2_projection_turn_items_failed_error_idx" }],
+      );
+      assert.deepStrictEqual(yield* runMigrations(), []);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
   it.effect("refuses to start when a later id would skip V2 migrations", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
