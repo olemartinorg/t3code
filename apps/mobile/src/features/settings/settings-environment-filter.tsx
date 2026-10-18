@@ -28,9 +28,13 @@ const SettingsEnvironmentFilterContext = createContext<{
   readonly selectProject: (projectKey: string | null) => void;
   readonly selectAll: () => void;
   readonly toggleEnvironment: (environmentId: EnvironmentId) => void;
+  readonly allowedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
 } | null>(null);
 
-export function SettingsEnvironmentFilterProvider(props: { readonly children: ReactNode }) {
+export function SettingsEnvironmentFilterProvider(props: {
+  readonly children: ReactNode;
+  readonly environmentIds?: ReadonlySet<EnvironmentId>;
+}) {
   const { environments } = useEnvironments();
   const projects = useProjects();
   const groupingSettings = useMobileProjectGroupingSettings();
@@ -40,12 +44,20 @@ export function SettingsEnvironmentFilterProvider(props: { readonly children: Re
   const projectGroups = useMemo(
     () =>
       buildProjectGroups({
-        projects,
+        projects: props.environmentIds
+          ? projects.filter((project) => props.environmentIds!.has(project.environmentId))
+          : projects,
         settings: { sidebarProjectGroupingMode: groupingMode, sidebarProjectGroupingOverrides: {} },
       }),
-    [projects, groupingMode],
+    [projects, groupingMode, props.environmentIds],
   );
-  const availableTargets = useMemo(() => connectedSettingsTargets(environments), [environments]);
+  const availableTargets = useMemo(
+    () =>
+      connectedSettingsTargets(environments).filter(
+        (entry) => !props.environmentIds || props.environmentIds.has(entry.environmentId),
+      ),
+    [environments, props.environmentIds],
+  );
   const selectedTargets = useMemo(
     () =>
       availableTargets.filter(
@@ -76,6 +88,7 @@ export function SettingsEnvironmentFilterProvider(props: { readonly children: Re
         setSelectedIds((current) =>
           toggleSettingsEnvironment(current, availableTargets, environmentId),
         ),
+      allowedEnvironmentIds: props.environmentIds ?? null,
     }),
     [
       availableTargets,
@@ -84,6 +97,7 @@ export function SettingsEnvironmentFilterProvider(props: { readonly children: Re
       projectGroups,
       selectableProjectGroups,
       selectedProjectKey,
+      props.environmentIds,
     ],
   );
   return (
@@ -97,4 +111,9 @@ export function useSettingsEnvironmentFilter() {
   const filter = useContext(SettingsEnvironmentFilterContext);
   if (filter === null) throw new Error("Settings environment filter provider is missing.");
   return filter;
+}
+
+/** Native routes outside Settings keep their ordinary unscoped behavior. */
+export function useOptionalSettingsEnvironmentFilter() {
+  return useContext(SettingsEnvironmentFilterContext);
 }

@@ -2,7 +2,7 @@ import { mobileIntegration } from "../../embedding/integration";
 import { useAtomValue } from "@effect/atom-react";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import type { WorktreeSetupCardProps } from "./worktree-setup-card";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -332,6 +332,7 @@ const USER_INPUT_TOGGLE_TIMING = {
 export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const { session: voiceInputSession } = useGlobalVoiceInput();
   const reportedModelSelection = useThreadReportedModelSelection({
     environmentId: props.environmentId,
@@ -896,16 +897,37 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const lastDispatchedVisitRef = useRef<string | null>(null);
+  const lastVisitAttemptRef = useRef<object | null>(null);
   const lastVisitDispatchRef = useRef({ threadKey: selectedThreadKey, at: 0 });
+  const [visitRetry, setVisitRetry] = useState({ key: "", count: 0 });
   const selectedThreadId = props.selectedThread.id;
   const selectedThreadUpdatedAt = props.selectedThread.updatedAt;
   const selectedThreadLastVisitedAt = props.selectedThread.lastVisitedAt;
   const selectedThreadCompletedAt = props.selectedThread.latestRun?.completedAt;
+  const threadVisible =
+    isFocused &&
+    showContent &&
+    props.connectionStateLabel === "connected" &&
+    contentPresentationKind === "ready";
+  useLayoutEffect(() => {
+    if (!threadVisible) return;
+    return mobileIntegration().threadVisibility?.({
+      environmentId: props.environmentId,
+      projectId: props.selectedThread.projectId,
+      threadId: selectedThreadId,
+    });
+  }, [props.environmentId, props.selectedThread.projectId, selectedThreadId, threadVisible]);
   useEffect(() => {
-    // Records the server-side visited watermark while the thread is on
-    // screen (mirror of web ChatView), so the "Done" marker clears on every
-    // device. Field absent → the server predates visited tracking.
-    if (!showContent || selectedThreadLastVisitedAt === undefined) return;
+    // Cached content can render before its native RPC session connects. Only
+    // acknowledge a connected, visible conversation after its content loads.
+    if (!threadVisible) {
+      lastDispatchedVisitRef.current = null;
+      lastVisitAttemptRef.current = null;
+      lastVisitDispatchRef.current = { threadKey: selectedThreadKey, at: 0 };
+      if (visitRetry.key !== "") setVisitRetry({ key: "", count: 0 });
+      return;
+    }
+    if (selectedThreadLastVisitedAt === undefined) return;
     const threadUpdatedAtMs = Date.parse(selectedThreadUpdatedAt);
     if (Number.isNaN(threadUpdatedAtMs)) return;
     const lastVisitedAtMs = selectedThreadLastVisitedAt
@@ -915,12 +937,35 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     // Dedupe per watermark — the effect re-runs before the command echo lands.
     const dispatchKey = `${selectedThreadKey}:${selectedThreadUpdatedAt}`;
     if (lastDispatchedVisitRef.current === dispatchKey) return;
+    const retryCount = visitRetry.key === dispatchKey ? visitRetry.count : 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    const cleanup = () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
     const dispatch = () => {
+      const attempt = {};
+      lastVisitAttemptRef.current = attempt;
       lastDispatchedVisitRef.current = dispatchKey;
       lastVisitDispatchRef.current = { threadKey: selectedThreadKey, at: Date.now() };
       void visitThread({
         environmentId: props.environmentId,
         input: { threadId: selectedThreadId, visitedAt: selectedThreadUpdatedAt },
+      }).then((result) => {
+        // Retry a transient failure even when the shell and connection keep
+        // their current values. Leaving this conversation cancels the retry.
+        if (result._tag === "Failure" && !disposed && lastVisitAttemptRef.current === attempt) {
+          lastVisitAttemptRef.current = null;
+          lastDispatchedVisitRef.current = null;
+          lastVisitDispatchRef.current = { threadKey: selectedThreadKey, at: 0 };
+          if (retryCount < 3) {
+            timer = setTimeout(
+              () => setVisitRetry({ key: dispatchKey, count: retryCount + 1 }),
+              500 * 2 ** retryCount,
+            );
+          }
+        }
       });
     };
     // Completion clears unread state immediately; streaming watermarks use the
@@ -933,10 +978,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     const elapsed = Date.now() - previous.at;
     if (previous.threadKey !== selectedThreadKey || hasUnseenCompletion || elapsed >= 10_000) {
       dispatch();
-      return;
+      return cleanup;
     }
-    const timer = setTimeout(dispatch, 10_000 - elapsed);
-    return () => clearTimeout(timer);
+    timer = setTimeout(dispatch, 10_000 - elapsed);
+    return cleanup;
   }, [
     props.environmentId,
     selectedThreadId,
@@ -944,7 +989,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     selectedThreadLastVisitedAt,
     selectedThreadCompletedAt,
     selectedThreadUpdatedAt,
-    showContent,
+    threadVisible,
+    visitRetry,
     visitThread,
   ]);
 

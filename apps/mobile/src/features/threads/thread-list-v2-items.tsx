@@ -494,6 +494,8 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
 });
 
 export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
+  /** Embedded recovery shelves expose only Wake and Un-settle. */
+  readonly recoveryOnly?: boolean;
   readonly thread: EnvironmentThreadShell;
   readonly variant: "card" | "slim";
   /** A message for this thread is waiting in the outbox. */
@@ -962,11 +964,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : null,
     [handleMenuAction, snoozePresetActions, swipeActions.secondary, thread.title],
   );
-  const swipeAccessibilityHint = !canOperateThread
-    ? "Opens the thread"
-    : secondaryAction === null
-      ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
-      : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
+  const swipeAccessibilityHint = props.recoveryOnly
+    ? `Offers ${snoozedRow ? "Wake" : "Un-settle"} for this thread.`
+    : !canOperateThread
+      ? "Opens the thread"
+      : secondaryAction === null
+        ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
+        : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
   // Sidebar rows use navigation foregrounds on their active and idle surfaces.
   const cardContent = (
@@ -1302,6 +1306,18 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
 
   if (!canOperateThread) return rowContent(() => {});
+
+  if (props.recoveryOnly) {
+    return (
+      <ControlPillMenu
+        actions={[snoozedRow ? SNOOZED_MENU_ACTIONS[0]! : SLIM_MENU_ACTIONS[0]!]}
+        onPressAction={handleMenuAction}
+        shouldOpenOnLongPress
+      >
+        {rowContent(() => {})}
+      </ControlPillMenu>
+    );
+  }
 
   return (
     <View collapsable={false}>

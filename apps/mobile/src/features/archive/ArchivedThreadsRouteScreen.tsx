@@ -15,16 +15,24 @@ import {
   refreshArchivedThreadsForEnvironment,
   useArchivedThreadSnapshots,
 } from "./useArchivedThreadSnapshots";
+import { useOptionalSettingsEnvironmentFilter } from "../settings/settings-environment-filter";
 
 export function ArchivedThreadsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const settingsScope = useOptionalSettingsEnvironmentFilter();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
   const [sortOrder, setSortOrder] = useState<ArchivedThreadSortOrder>("newest");
   const environments = useMemo<ReadonlyArray<ArchivedThreadsHeaderEnvironment>>(
     () =>
       Arr.sort(
-        Object.values(savedConnectionsById).map((connection) => ({
+        (settingsScope?.allowedEnvironmentIds
+          ? settingsScope.availableTargets.map((entry) => ({
+              environmentId: entry.environmentId,
+              environmentLabel: entry.label,
+            }))
+          : Object.values(savedConnectionsById)
+        ).map((connection) => ({
           environmentId: connection.environmentId,
           label: connection.environmentLabel,
         })),
@@ -32,7 +40,7 @@ export function ArchivedThreadsRouteScreen() {
           environment.label.toLocaleLowerCase(),
         ),
       ),
-    [savedConnectionsById],
+    [savedConnectionsById, settingsScope],
   );
   const environmentIds = useMemo(
     () => environments.map((environment) => environment.environmentId),

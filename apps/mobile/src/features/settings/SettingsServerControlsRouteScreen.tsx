@@ -134,11 +134,21 @@ export function SettingsEnvironmentAgentBehaviorRouteScreen() {
   return <ServerSettingsDetail page="agent-behavior" />;
 }
 
-export function SettingsEnvironmentMaintenanceRouteScreen() {
-  return <ServerSettingsDetail page="maintenance" />;
+export function SettingsEnvironmentMaintenanceRouteScreen(
+  props: { readonly includeEnvironmentManagement?: boolean } = {},
+) {
+  return (
+    <ServerSettingsDetail
+      page="maintenance"
+      includeEnvironmentManagement={props.includeEnvironmentManagement}
+    />
+  );
 }
 
-function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
+function ServerSettingsDetail(props: {
+  readonly page: SettingsPage;
+  readonly includeEnvironmentManagement?: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -428,7 +438,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "maintenance" ? (
                 <>
-                  {!projectSelected ? (
+                  {!projectSelected && props.includeEnvironmentManagement !== false ? (
                     <SettingsSection title="Manage environments">
                       {selectedTargets.map((target) => (
                         <SettingsRow

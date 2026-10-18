@@ -55,6 +55,7 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
+import { useOptionalSettingsEnvironmentFilter } from "../settings/settings-environment-filter";
 
 type UsageTab = "usage" | "limits";
 const TAB_OPTIONS = [
@@ -86,6 +87,7 @@ const CURSOR_KEYCHAIN_COPY = "Requires access to your Cursor login in macOS Keyc
  * pull to refresh, each refreshing its own data.
  */
 export function UsageRouteScreen() {
+  const settingsScope = useOptionalSettingsEnvironmentFilter();
   const route = useRoute<RouteProp<{ Usage: { tab?: string } | undefined }, "Usage">>();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -111,12 +113,31 @@ export function UsageRouteScreen() {
   const isPast24Hours = windowDays === 1;
   const [selectedEnvironmentIds, setSelectedEnvironmentIds] =
     useState<ReadonlySet<EnvironmentId> | null>(null);
-  const { merged, environments, selectedEnvironments, isPending, refresh } = useUsage(
-    window,
-    selectedEnvironmentIds,
+  const scopedEnvironmentIds = settingsScope?.allowedEnvironmentIds ?? null;
+  const effectiveEnvironmentIds = useMemo(
+    () =>
+      scopedEnvironmentIds === null
+        ? selectedEnvironmentIds
+        : new Set(
+            [...scopedEnvironmentIds].filter(
+              (id) => selectedEnvironmentIds === null || selectedEnvironmentIds.has(id),
+            ),
+          ),
+    [scopedEnvironmentIds, selectedEnvironmentIds],
   );
+  const {
+    merged,
+    environments: allEnvironments,
+    selectedEnvironments,
+    isPending,
+    refresh,
+  } = useUsage(window, effectiveEnvironmentIds);
+  const environments =
+    scopedEnvironmentIds === null
+      ? allEnvironments
+      : allEnvironments.filter((entry) => scopedEnvironmentIds.has(entry.environmentId));
   const isFocused = useIsFocused();
-  const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && tab === "limits");
+  const limits = useRefreshLimits(effectiveEnvironmentIds, isFocused && tab === "limits");
   const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
   const refreshAfterCursorEnable = () => {
     void refresh();

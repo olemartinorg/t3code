@@ -7,6 +7,12 @@ export type MobileIntegration = {
   socket?: (url: string | URL) => WebSocket;
   reconnect?: () => Promise<void>;
   threadTools?: boolean;
+  /** Own the focused, connected conversation only while its content is ready. */
+  threadVisibility?: (thread: {
+    environmentId: string;
+    projectId: string | null;
+    threadId: string;
+  }) => (() => void) | void;
   defaultThemeMode?: "light" | "dark" | "system";
   renderHtmlAttachments?: boolean;
   downloadAttachment?: (url: string, file: File, signal: AbortSignal) => Promise<void>;

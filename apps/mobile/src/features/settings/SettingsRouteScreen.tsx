@@ -132,7 +132,7 @@ function LocalSettingsRouteScreen() {
   );
 }
 
-function SettingsIndexSections() {
+export function SettingsIndexSections(props: { readonly includeAbout?: boolean } = {}) {
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -215,7 +215,9 @@ function SettingsIndexSections() {
 
       <SettingsSection title="App">
         <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
-        <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+        {props.includeAbout !== false && (
+          <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+        )}
       </SettingsSection>
     </>
   );
