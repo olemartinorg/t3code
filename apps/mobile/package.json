@@ -5,6 +5,7 @@
   "main": "index.ts",
   "exports": {
     "./embedding": "./src/embedding/index.ts",
+    "./embedding/composer": "./src/embedding/composer.ts",
     "./embedding/runtime": "./src/embedding/runtime.ts",
     "./embedding/integration": "./src/embedding/integration.ts",
     "./package.json": "./package.json",

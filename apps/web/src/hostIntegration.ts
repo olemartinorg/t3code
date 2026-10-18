@@ -23,7 +23,7 @@ export interface HostIntegration {
   readonly composer?: {
     storage: StateStorage;
     changed: (rehydrate: () => void) => void;
-    dirty: () => void;
+    dirty: (flush: () => void) => void;
   };
   readonly settings?: {
     read: () => Record<string, unknown>;

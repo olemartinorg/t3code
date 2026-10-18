@@ -129,8 +129,8 @@ const composerPersistStorage: PersistStorage<ComposerPersistState> = {
     return JSON.parse(raw) as StorageValue<ComposerPersistState>;
   },
   setItem: (name, value) => {
-    hostIntegration()?.composer?.dirty();
     composerDebouncedStorage.setItem(name, value);
+    hostIntegration()?.composer?.dirty(() => composerDebouncedStorage.flush());
   },
   removeItem: (name) => composerDebouncedStorage.removeItem(name),
 };
