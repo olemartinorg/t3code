@@ -88,7 +88,7 @@ import {
   formatTerminalContextReference,
   type TerminalContextDraft,
 } from "./lib/terminalContext";
-import { createDeferredStorage } from "./lib/storage";
+import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { applyPreviewServerSnapshot, resetPreviewStateForTests } from "./previewStateStore";
 
 function makeImage(input: {
@@ -3565,5 +3565,112 @@ describe("composerDraftStore attachment references", () => {
     expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
       prompt,
     );
+  });
+});
+
+describe("text-only host hydration", () => {
+  beforeEach(() => {
+    resetComposerDraftStore();
+    const storage = createMemoryStorage();
+    vi.stubGlobal("window", {
+      localStorage: storage,
+      t3Host: {
+        composer: {
+          storage,
+          dirty: () => {},
+          changed: () => {},
+          textOnlyHydration: true,
+        },
+      },
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetComposerDraftStore();
+  });
+
+  it("updates remote prompts without replacing live files, images or local options in any draft", () => {
+    const mapped = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("mapped"));
+    const unrelated = scopeThreadRef(OTHER_TEST_ENVIRONMENT_ID, ThreadId.make("unmapped"));
+    const store = useComposerDraftStore.getState();
+    for (const target of [mapped, unrelated]) {
+      store.addFiles(target, [makeFile(`file-${target.threadId}`)]);
+      store.addImages(target, [
+        makeImage({ id: `image-${target.threadId}`, previewUrl: `blob:${target.threadId}` }),
+      ]);
+      store.setModelSelection(target, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+      store.setRuntimeMode(target, "full-access");
+      store.setInteractionMode(target, "plan");
+    }
+    useComposerDraftStore.setState((state) => ({
+      draftsByThreadKey: Object.fromEntries(
+        Object.entries(state.draftsByThreadKey).map(([key, draft]) => [
+          key,
+          { ...draft, nonPersistedImageIds: draft.images.map((image) => image.id) },
+        ]),
+      ),
+    }));
+    const current = useComposerDraftStore.getState();
+    const persisted = partializeComposerDraftStoreState(current);
+    const remote = {
+      ...persisted,
+      draftsByThreadKey: {
+        ...persisted.draftsByThreadKey,
+        [scopedThreadKey(mapped)]: {
+          ...persisted.draftsByThreadKey[scopedThreadKey(mapped)]!,
+          prompt: "Continued on the phone",
+        },
+      },
+    };
+    const merged = useComposerDraftStore.persist.getOptions().merge!(remote, current);
+    for (const target of [mapped, unrelated]) {
+      const key = scopedThreadKey(target);
+      const before = current.draftsByThreadKey[key]!;
+      const after = merged.draftsByThreadKey[key]!;
+      expect(after.files).toBe(before.files);
+      expect(after.files[0]!.file).toBe(before.files[0]!.file);
+      expect(composerFileNeedsReattach(after.files[0]!)).toBe(false);
+      expect(after.images).toBe(before.images);
+      expect(after.nonPersistedImageIds).toBe(before.nonPersistedImageIds);
+      expect(after.nonPersistedImageIds).toEqual([`image-${target.threadId}`]);
+      expect(after.modelSelectionByProvider).toBe(before.modelSelectionByProvider);
+      expect(after.runtimeMode).toBe("full-access");
+      expect(after.interactionMode).toBe("plan");
+    }
+    expect(merged.draftsByThreadKey[scopedThreadKey(mapped)]!.prompt).toBe(
+      "Continued on the phone",
+    );
+    expect(merged.draftsByThreadKey[scopedThreadKey(unrelated)]).toBe(
+      current.draftsByThreadKey[scopedThreadKey(unrelated)],
+    );
+  });
+
+  it("keeps runtime-only image sessions through a remote clear while removing text-only sessions", () => {
+    const imageDraft = DraftId.make("live-image-draft");
+    const textDraft = DraftId.make("text-draft");
+    const project = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("project"));
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(project, imageDraft);
+    store.addImages(imageDraft, [
+      makeImage({ id: "not-yet-persisted", previewUrl: "blob:live-image" }),
+    ]);
+    store.setProjectDraftThreadId(project, textDraft);
+    store.setPrompt(textDraft, "Unsent text");
+    const current = useComposerDraftStore.getState();
+    const image = current.draftsByThreadKey[imageDraft]!.images[0]!;
+    const persisted = partializeComposerDraftStoreState(current);
+    const updated = useComposerDraftStore.persist.getOptions().merge!(persisted, current);
+    expect(updated.draftThreadsByThreadKey[imageDraft]).toBe(
+      current.draftThreadsByThreadKey[imageDraft],
+    );
+    const remote = partializeComposerDraftStoreState(useComposerDraftStore.getInitialState());
+    const merged = useComposerDraftStore.persist.getOptions().merge!(remote, current);
+    expect(merged.draftsByThreadKey[imageDraft]!.images[0]).toBe(image);
+    expect(merged.draftThreadsByThreadKey[imageDraft]).toBe(
+      current.draftThreadsByThreadKey[imageDraft],
+    );
+    expect(merged.draftsByThreadKey[imageDraft]!.prompt).toBe("");
+    expect(merged.draftsByThreadKey[textDraft]).toBeUndefined();
+    expect(merged.draftThreadsByThreadKey[textDraft]).toBeUndefined();
   });
 });
