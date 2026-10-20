@@ -1,7 +1,12 @@
 import { useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { StateStorage } from "./lib/storage";
-import type { ClientSettings, ModelSelection, ServerSettings } from "@t3tools/contracts";
+import type {
+  ClientSettings,
+  ModelSelection,
+  ServerSettings,
+  ComposerDraftPresenceEntry,
+} from "@t3tools/contracts";
 
 /** Optional embedding services supplied before the native client is loaded. */
 export interface HostIntegration {
@@ -24,6 +29,14 @@ export interface HostIntegration {
     storage: StateStorage;
     changed: (rehydrate: () => void) => void;
     dirty: (flush: () => void) => void;
+    /** Standalone integrations may retain native presence for content they do not own. */
+    nativePresence?: {
+      filter: (
+        environmentId: string,
+        entries: ComposerDraftPresenceEntry[],
+      ) => ComposerDraftPresenceEntry[];
+      subscribe: (listener: () => void) => () => void;
+    };
   };
   readonly settings?: {
     read: () => Record<string, unknown>;

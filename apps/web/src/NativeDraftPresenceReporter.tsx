@@ -57,7 +57,12 @@ export function NativeDraftPresenceReporter() {
   const configs = useServerConfigs();
   const [source, setSource] = useState<typeof ComposerDraftPresenceSource.Type | null>(null);
   useEffect(() => {
-    if (!isElectron || hostIntegration()?.composer || !navigator.locks) return;
+    if (
+      !isElectron ||
+      (hostIntegration()?.composer && !hostIntegration()?.composer?.nativePresence) ||
+      !navigator.locks
+    )
+      return;
     const controller = new AbortController();
     void navigator.locks
       .request("t3code:desktop-draft-presence", { signal: controller.signal }, async () => {
@@ -134,6 +139,10 @@ function EnvironmentDraftPresenceReporter({
     window.addEventListener("storage", changed);
     return () => window.removeEventListener("storage", changed);
   }, []);
+  useEffect(
+    () => hostIntegration()?.composer?.nativePresence?.subscribe(() => wake.current?.()),
+    [],
+  );
   useEffect(() => {
     latest.current = shell;
     wake.current?.();
@@ -154,12 +163,15 @@ function EnvironmentDraftPresenceReporter({
           flushComposerDrafts();
           dirty.current = false;
         }
-        return composerDraftPresenceEntries(
+        const entries = composerDraftPresenceEntries(
           localDocument.current
             ? useComposerDraftStore.getState()
             : readSavedComposerDraftPresenceState(),
           environmentId,
           latest.current.snapshot.value,
+        );
+        return (
+          hostIntegration()?.composer?.nativePresence?.filter(environmentId, entries) ?? entries
         );
       },
       replace: async (writerEpoch, revision, entries) => {
