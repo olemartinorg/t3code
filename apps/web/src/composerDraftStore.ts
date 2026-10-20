@@ -4395,17 +4395,41 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
       merge: (persistedState, currentState) => {
         const normalizedPersisted =
           normalizeCurrentPersistedComposerDraftStoreState(persistedState);
+        const textOnly = hostIntegration()?.composer?.textOnlyHydration === true;
         const draftsByThreadKey = Object.fromEntries(
-          Object.entries(normalizedPersisted.draftsByThreadKey).map(([threadKey, draft]) => [
-            threadKey,
-            toHydratedThreadDraft(draft),
-          ]),
+          Object.entries(normalizedPersisted.draftsByThreadKey).map(([threadKey, draft]) => {
+            const local = currentState.draftsByThreadKey[threadKey];
+            if (textOnly && local) {
+              return [
+                threadKey,
+                local.prompt === draft.prompt ? local : { ...local, prompt: draft.prompt },
+              ];
+            }
+            return [threadKey, toHydratedThreadDraft(draft)];
+          }),
         );
         const draftThreadsByThreadKey = Object.fromEntries(
           Object.entries(normalizedPersisted.draftThreadsByThreadKey).map(
-            ([threadKey, draftThread]) => [threadKey, toHydratedDraftThreadState(draftThread)],
+            ([threadKey, draftThread]) => [
+              threadKey,
+              textOnly && currentState.draftThreadsByThreadKey[threadKey]
+                ? currentState.draftThreadsByThreadKey[threadKey]
+                : toHydratedDraftThreadState(draftThread),
+            ],
           ),
         ) as Record<string, DraftThreadState>;
+        if (textOnly) {
+          // Live files and images need not have serializable bytes. A remote
+          // text clear cannot discard content owned by this running client.
+          for (const [threadKey, local] of Object.entries(currentState.draftsByThreadKey)) {
+            if (draftsByThreadKey[threadKey]) continue;
+            const withoutText = { ...local, prompt: "" };
+            if (shouldRemoveDraft(withoutText)) continue;
+            draftsByThreadKey[threadKey] = withoutText;
+            const session = currentState.draftThreadsByThreadKey[threadKey];
+            if (session) draftThreadsByThreadKey[threadKey] = session;
+          }
+        }
         return {
           ...currentState,
           draftsByThreadKey,

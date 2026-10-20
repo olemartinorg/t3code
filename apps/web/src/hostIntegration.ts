@@ -29,6 +29,8 @@ export interface HostIntegration {
     storage: StateStorage;
     changed: (rehydrate: () => void) => void;
     dirty: (flush: () => void) => void;
+    /** Remote prompt updates retain locally owned runtime composer content. */
+    textOnlyHydration?: boolean;
     /** Standalone integrations may retain native presence for content they do not own. */
     nativePresence?: {
       filter: (
