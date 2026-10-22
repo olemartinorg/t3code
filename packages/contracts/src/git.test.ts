@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import {
   VcsCreateWorktreeInput,
+  VcsSwitchRefGuardedInput,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitRunStackedActionResult,
@@ -22,6 +23,16 @@ const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedAction
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
 const decodeVcsStatusLocalResult = Schema.decodeUnknownSync(VcsStatusLocalResult);
+
+describe("VcsSwitchRefGuardedInput", () => {
+  it("requires the native admission guard before accepting a branch switch", () => {
+    const decode = Schema.decodeUnknownSync(VcsSwitchRefGuardedInput);
+    expect(() => decode({ cwd: "/repo", refName: "feature" })).toThrow();
+    expect(() => decode({ cwd: "/repo", refName: "feature", guarded: {} })).toThrow();
+    const guarded = { currentRef: "main", currentHead: "a".repeat(40), targetHead: "b".repeat(40) };
+    expect(decode({ cwd: "/repo", refName: "feature", guarded }).guarded).toEqual(guarded);
+  });
+});
 
 describe("VcsCreateWorktreeInput", () => {
   it("accepts omitted newRefName for existing-refName worktrees", () => {
