@@ -1,3 +1,4 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import { assert, describe, expect, it, vi } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,8 @@ function layer(input: {
   readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
 }) {
   return GitWorkflowService.layer.pipe(
+    Layer.provide(Layer.mock(EventSink.EventSinkV2)({})),
+    Layer.provide(NodeServices.layer),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         detect: input.detect,
@@ -123,6 +126,8 @@ describe("GitWorkflowService", () => {
     const status = vi.fn();
 
     const layerTest = GitWorkflowService.layer.pipe(
+      Layer.provide(Layer.mock(EventSink.EventSinkV2)({})),
+      Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
           detect: () => Effect.succeed(null),
@@ -250,6 +255,8 @@ describe("GitWorkflowService", () => {
       Effect.scoped,
       Effect.provide(
         GitWorkflowService.layer.pipe(
+          Layer.provide(Layer.mock(EventSink.EventSinkV2)({})),
+          Layer.provide(NodeServices.layer),
           Layer.provide(
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
               resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),

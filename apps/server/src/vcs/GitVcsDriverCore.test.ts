@@ -2049,6 +2049,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         }
         yield* git(cwd, ["add", "."]);
         yield* git(cwd, ["update-index", "--chmod=+x", "mode-only.sh"]);
+        if ((yield* HostProcess.Platform) !== "win32") {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* fs.chmod(path.join(cwd, "mode-only.sh"), 0o755);
+        }
         yield* git(cwd, ["commit", "-m", "rename and add files"]);
         const preview = yield* driver.getReviewDiffPreview({
           cwd,
@@ -2967,6 +2972,177 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         );
         assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
       }),
+    );
+
+    it.effect.each(["unstaged", "staged", "untracked"] as const)(
+      "rejects guarded checkout with %s work without changing files or index",
+      (dirt) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* driver.createRef({ cwd, refName: "target" });
+          const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+          const file = dirt === "untracked" ? "new.txt" : "README.md";
+          yield* writeTextFile(cwd, file, "preserved local work\n");
+          if (dirt === "staged") yield* git(cwd, ["add", file]);
+          const index = yield* fs.readFile(path.join(cwd, ".git/index"));
+          const result = yield* driver
+            .switchRef({
+              cwd,
+              refName: "target",
+              guarded: {
+                currentRef: initialBranch,
+                currentHead: head,
+                targetHead: head,
+              },
+            })
+            .pipe(Effect.result);
+          assert.equal(result._tag, "Failure");
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+          assert.equal(yield* fs.readFileString(path.join(cwd, file)), "preserved local work\n");
+          assert.deepEqual(yield* fs.readFile(path.join(cwd, ".git/index")), index);
+        }),
+    );
+
+    it.effect.each([
+      "index.lock",
+      "MERGE_HEAD",
+      "rebase-merge",
+      "rebase-apply",
+      "CHERRY_PICK_HEAD",
+      "REVERT_HEAD",
+      "sequencer",
+      "BISECT_START",
+    ])("rejects guarded checkout during %s", (operation) =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createRef({ cwd, refName: "target" });
+        const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* writeTextFile(cwd, `.git/${operation}`, "");
+        const result = yield* driver
+          .switchRef({
+            cwd,
+            refName: "target",
+            guarded: {
+              currentRef: initialBranch,
+              currentHead: head,
+              targetHead: head,
+            },
+          })
+          .pipe(Effect.result);
+        assert.equal(result._tag, "Failure");
+        assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+      }),
+    );
+
+    it.effect.each(["currentRef", "currentHead", "targetHead"] as const)(
+      "rejects guarded checkout with stale %s",
+      (stale) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          yield* driver.createRef({ cwd, refName: "target" });
+          const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+          const result = yield* driver
+            .switchRef({
+              cwd,
+              refName: "target",
+              guarded: {
+                currentRef: initialBranch,
+                currentHead: head,
+                targetHead: head,
+                [stale]: "obsolete",
+              },
+            })
+            .pipe(Effect.result);
+          assert.equal(result._tag, "Failure");
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+        }),
+    );
+
+    it.effect("switches a clean guarded local branch while preserving unpushed commits", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createRef({ cwd, refName: "target" });
+        const targetHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "local unpushed work"]);
+        const currentHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+        const result = yield* driver.switchRef({
+          cwd,
+          refName: "target",
+          guarded: {
+            currentRef: initialBranch,
+            currentHead,
+            targetHead,
+          },
+        });
+        assert.equal(result.refName, "target");
+        assert.equal(yield* git(cwd, ["rev-parse", initialBranch]), currentHead);
+        assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), targetHead);
+      }),
+    );
+
+    it.effect.each([false, true])(
+      "preserves external edits after guarded preflight (conflicting: %s)",
+      (conflicting) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          yield* git(cwd, ["checkout", "-b", "target"]);
+          yield* writeTextFile(cwd, "README.md", "target content\n");
+          yield* git(cwd, ["add", "README.md"]);
+          yield* git(cwd, ["commit", "-m", "target change"]);
+          const targetHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["checkout", initialBranch]);
+          const currentHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+          const editedFile = conflicting ? "README.md" : "external.txt";
+          let injected = false;
+          const injectingSpawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              if (ChildProcess.isStandardCommand(command) && command.args.includes("checkout")) {
+                injected = true;
+                yield* fs.writeFileString(path.join(cwd, editedFile), "external edit\n");
+              }
+              return yield* delegate.spawn(command);
+            }),
+          );
+          const driver = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, injectingSpawner),
+            Effect.provide(layerServerConfig),
+          );
+          const result = yield* driver
+            .switchRef({
+              cwd,
+              refName: "target",
+              guarded: {
+                currentRef: initialBranch,
+                currentHead,
+                targetHead,
+              },
+            })
+            .pipe(Effect.result);
+          assert.isTrue(injected);
+          assert.equal(result._tag, conflicting ? "Failure" : "Success");
+          assert.equal(
+            yield* git(cwd, ["branch", "--show-current"]),
+            conflicting ? initialBranch : "target",
+          );
+          assert.equal(yield* fs.readFileString(path.join(cwd, editedFile)), "external edit\n");
+          const status = yield* driver.statusDetailsLocal(cwd);
+          assert.isTrue(status.hasWorkingTreeChanges);
+          assert.equal(status.branch, conflicting ? initialBranch : "target");
+        }),
     );
 
     it.effect("still creates and reuses remote tracking branches and allows detached refs", () =>

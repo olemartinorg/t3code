@@ -1,3 +1,4 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
@@ -895,6 +896,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       let remoteReads = 0;
       const workflowContext = yield* Layer.build(
         GitWorkflowService.layer.pipe(
+          Layer.provide(Layer.mock(EventSink.EventSinkV2)({})),
+          Layer.provide(NodeServices.layer),
           Layer.provide(
             Layer.succeed(GitManager.GitManager, {
               ...manager,
