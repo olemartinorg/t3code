@@ -4014,6 +4014,69 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               ? ["checkout", localTrackingBranch]
               : ["checkout", input.refName];
 
+      if (input.guarded) {
+        const observe = (args: string[]) =>
+          executeGit("GitVcsDriver.switchRef.preflight", input.cwd, args, { timeoutMs: 5_000 });
+        yield* observe(["check-ref-format", "--branch", input.refName]);
+        const currentRef = (yield* observe([
+          "symbolic-ref",
+          "--quiet",
+          "--short",
+          "HEAD",
+        ])).stdout.trim();
+        const currentHead = (yield* observe(["rev-parse", "HEAD"])).stdout.trim();
+        const targetHead = (yield* observe([
+          "rev-parse",
+          "--verify",
+          `refs/heads/${input.refName}^{commit}`,
+        ])).stdout.trim();
+        const status = (yield* observe(["status", "--porcelain=v1", "--untracked-files=all"]))
+          .stdout;
+        const operationPaths = (yield* observe([
+          "rev-parse",
+          ...[
+            "index.lock",
+            "MERGE_HEAD",
+            "rebase-merge",
+            "rebase-apply",
+            "CHERRY_PICK_HEAD",
+            "REVERT_HEAD",
+            "sequencer",
+            "BISECT_START",
+          ].flatMap((name) => ["--git-path", name]),
+        ])).stdout
+          .trim()
+          .split("\n");
+        const pending = yield* Effect.forEach(operationPaths, (file) =>
+          fileSystem.exists(path.resolve(input.cwd, file)),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new GitCommandError({
+                operation: "GitVcsDriver.switchRef.preflight",
+                command: "checkout",
+                cwd: input.cwd,
+                detail: "Git operation state could not be inspected.",
+                cause,
+              }),
+          ),
+        );
+        if (
+          currentRef !== input.guarded.currentRef ||
+          currentHead !== input.guarded.currentHead ||
+          targetHead !== input.guarded.targetHead ||
+          status.trim() ||
+          pending.some(Boolean)
+        )
+          return yield* new GitCommandError({
+            operation: "GitVcsDriver.switchRef",
+            command: "checkout",
+            cwd: input.cwd,
+            detail:
+              "Checkout changed, has staged/unstaged/untracked work, or a Git operation is in progress. Refresh and retry.",
+          });
+      }
+
       // A stale ref must not turn into a path checkout that discards local edits.
       yield* executeGit("GitVcsDriver.switchRef.checkout", input.cwd, [...checkoutArgs, "--"], {
         timeoutMs: 10_000,

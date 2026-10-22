@@ -1,5 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 
 import {
@@ -29,6 +31,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as GitManager from "./GitManager.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -168,6 +171,9 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -415,7 +421,24 @@ export const make = Effect.gen(function* () {
       ),
     switchRef: (input) =>
       ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
-        Effect.andThen(Effect.scoped(git.switchRef(input))),
+        Effect.andThen(
+          input.guarded
+            ? eventSink.withCheckoutAdmission(input.cwd, Effect.scoped(git.switchRef(input))).pipe(
+                Effect.provideService(FileSystem.FileSystem, fs),
+                Effect.provideService(Path.Path, path),
+                Effect.catchTags({
+                  CheckoutAdmissionError: (cause) =>
+                    new GitCommandError({
+                      operation: "GitWorkflowService.switchRef",
+                      command: "checkout",
+                      cwd: input.cwd,
+                      detail: cause.message,
+                      cause,
+                    }),
+                }),
+              )
+            : Effect.scoped(git.switchRef(input)),
+        ),
       ),
     renameBranch: (input) =>
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(

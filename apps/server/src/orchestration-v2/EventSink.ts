@@ -15,6 +15,8 @@ import {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -71,7 +73,31 @@ export type EventSinkV2Error = typeof EventSinkV2Error.Type;
 /**
  * SERVICE DEFINITION
  */
+export class CheckoutAdmissionError extends Schema.TaggedError<CheckoutAdmissionError>()(
+  "CheckoutAdmissionError",
+  {
+    cwd: Schema.String,
+    reason: Schema.Literals(["active-work", "unknown-ownership"]),
+    threadId: Schema.optional(ThreadId),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return this.reason === "active-work"
+      ? "Native agent work is active or queued for this checkout."
+      : "Native execution ownership could not be verified for this checkout.";
+  }
+}
+
+const isCheckoutAdmissionError = Schema.is(CheckoutAdmissionError);
+
 export interface EventSinkV2Shape {
+  /** Excludes native work commits until Git finishes, after checking committed ownership. */
+  readonly withCheckoutAdmission: <A, E, R>(
+    cwd: string,
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | CheckoutAdmissionError, R | FileSystem.FileSystem | Path.Path>;
+
   readonly write: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
     readonly commandId?: CommandId;
@@ -254,6 +280,104 @@ const layerBase: Layer.Layer<
     // waits, so a writer that holds the transaction while it waits for the
     // lane is not blocked for long.
     const publishLane = yield* Semaphore.make(1);
+    // A start is visible in the projection/outbox before any provider effect runs.
+    // Serialize checkout against the transaction that admits that work, rather
+    // than a pre-dispatch idle read. Other commits wait only for this short Git operation.
+    const executionAdmission = yield* Semaphore.make(1);
+    const inspectCheckout = (cwd: string) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.realPath(cwd);
+        const overlaps = (workspace: string) => {
+          const relative = path.relative(root, workspace);
+          const reverse = path.relative(workspace, root);
+          const contains = (value: string) =>
+            value === "" ||
+            (!path.isAbsolute(value) && value !== ".." && !value.startsWith(`..${path.sep}`));
+          return contains(relative) || contains(reverse);
+        };
+        // Include archived/deleted owners and committed effects, even before a
+        // provider-start worker claims them. Do not hydrate conversation history.
+        const threads = yield* sql<{
+          readonly thread_id: string;
+        }>`SELECT thread_id FROM orchestration_v2_projection_threads`;
+        const effects = yield* sql<{ readonly thread_id: string }>`
+        SELECT DISTINCT thread_id FROM orchestration_v2_effect_outbox
+        WHERE status IN ('pending', 'running', 'failed')
+          AND effect_type NOT IN ('thread-title.generate', 'preview.cleanup', 'attachment.cleanup')
+      `;
+        const effectOwners = new Set(effects.map((row) => row.thread_id));
+        const knownOwners = new Set(threads.map((row) => row.thread_id));
+        if (effects.some((row) => !knownOwners.has(row.thread_id)))
+          return yield* new CheckoutAdmissionError({ cwd, reason: "unknown-ownership" });
+        for (const { thread_id } of threads) {
+          const projection = yield* projectionStore.getThreadRecords(ThreadId.make(thread_id), [
+            "runs",
+            "nodes",
+            "subagents",
+            "providerSessions",
+            "providerThreads",
+            "providerTurns",
+            "runtimeRequests",
+          ]);
+          const active =
+            effectOwners.has(thread_id) ||
+            projection.runs.some((run) =>
+              ["queued", "preparing", "starting", "running", "waiting"].includes(run.status),
+            ) ||
+            projection.nodes.some((node) =>
+              ["pending", "running", "waiting"].includes(node.status),
+            ) ||
+            projection.subagents.some((agent) =>
+              ["pending", "running", "waiting"].includes(agent.status),
+            ) ||
+            projection.providerTurns.some((turn) => ["pending", "running"].includes(turn.status)) ||
+            projection.providerSessions.some((session) =>
+              ["starting", "running", "waiting"].includes(session.status),
+            ) ||
+            projection.providerThreads.some(
+              (thread) =>
+                thread.status === "active" ||
+                thread.goal?.status === "active" ||
+                (thread.pendingBackgroundTasks?.length ?? 0) > 0,
+            ) ||
+            projection.runtimeRequests.some((request) => request.status === "pending");
+          if (!active) continue;
+          const project = yield* projectStore.get(projection.thread.projectId, {
+            includeDeleted: true,
+          });
+          const workspaceRoot =
+            projection.thread.worktreePath ?? Option.getOrUndefined(project)?.workspaceRoot;
+          if (workspaceRoot === undefined)
+            return yield* new CheckoutAdmissionError({
+              cwd,
+              reason: "unknown-ownership",
+              threadId: projection.thread.id,
+            });
+          const workspaces = new Set([
+            workspaceRoot,
+            ...projection.providerSessions
+              .filter((session) => session.status !== "stopped" && session.status !== "error")
+              .map((session) => session.cwd),
+          ]);
+          for (const workspace of workspaces) {
+            if (overlaps(yield* fs.realPath(workspace)))
+              return yield* new CheckoutAdmissionError({
+                cwd,
+                reason: "active-work",
+                threadId: projection.thread.id,
+              });
+          }
+        }
+      }).pipe(
+        Effect.mapError((cause) =>
+          isCheckoutAdmissionError(cause)
+            ? cause
+            : new CheckoutAdmissionError({ cwd, reason: "unknown-ownership", cause }),
+        ),
+      );
+
     const commitThenPublish = <A, E, R>(
       transaction: Effect.Effect<A, E, R>,
       publish: (committed: A) => Effect.Effect<void>,
@@ -268,8 +392,8 @@ const layerBase: Layer.Layer<
           ),
           Effect.uninterruptible,
         );
-        return sql
-          .withTransaction(Effect.tap(transaction, () => takeLane))
+        return executionAdmission
+          .withPermit(sql.withTransaction(Effect.tap(transaction, () => takeLane)))
           .pipe(
             Effect.tap(publish),
             Effect.ensuring(
@@ -815,6 +939,8 @@ const layerBase: Layer.Layer<
     };
 
     return EventSinkV2.of({
+      withCheckoutAdmission: (cwd, effect) =>
+        executionAdmission.withPermit(inspectCheckout(cwd).pipe(Effect.andThen(effect))),
       write: (input) =>
         writeEffect({ ...input, effects: [] }).pipe(
           Effect.mapError(

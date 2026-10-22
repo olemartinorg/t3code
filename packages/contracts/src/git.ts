@@ -195,6 +195,14 @@ export type VcsCreateRefResult = typeof VcsCreateRefResult.Type;
 export const VcsSwitchRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,
+  /** Local-branch checkout after native work admission and a fresh Git preflight. */
+  guarded: Schema.optional(
+    Schema.Struct({
+      currentRef: TrimmedNonEmptyStringSchema,
+      currentHead: TrimmedNonEmptyStringSchema,
+      targetHead: TrimmedNonEmptyStringSchema,
+    }),
+  ),
 });
 export type VcsSwitchRefInput = typeof VcsSwitchRefInput.Type;
 
