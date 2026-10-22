@@ -120,6 +120,7 @@ import {
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
+  VcsSwitchRefGuardedInput,
   VcsSwitchRefResult,
   GitCommandError,
   VcsCreateRefInput,
@@ -429,6 +430,7 @@ export const WS_METHODS = {
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
+  vcsSwitchRefGuarded: "vcs.switchRefGuarded",
   vcsInit: "vcs.init",
 
   // Git workflow methods
@@ -1426,6 +1428,12 @@ const WsVcsSwitchRefRpc = Rpc.make(WS_METHODS.vcsSwitchRef, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsSwitchRefGuardedRpc = Rpc.make(WS_METHODS.vcsSwitchRefGuarded, {
+  payload: VcsSwitchRefGuardedInput,
+  success: VcsSwitchRefResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   payload: VcsInitInput,
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
@@ -2027,6 +2035,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsRemoveWorktreeRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
+  WsVcsSwitchRefGuardedRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,

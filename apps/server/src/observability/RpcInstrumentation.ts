@@ -172,6 +172,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.vcsRemoveWorktree]: "vcs",
   [WS_METHODS.vcsCreateRef]: "vcs",
   [WS_METHODS.vcsSwitchRef]: "vcs",
+  [WS_METHODS.vcsSwitchRefGuarded]: "vcs",
   [WS_METHODS.vcsInit]: "vcs",
   [WS_METHODS.reviewGetDiffPreview]: "review",
   [WS_METHODS.reviewGetDiffFileContents]: "review",

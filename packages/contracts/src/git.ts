@@ -192,19 +192,25 @@ export const VcsCreateRefResult = Schema.Struct({
 });
 export type VcsCreateRefResult = typeof VcsCreateRefResult.Type;
 
+const CheckoutGuard = Schema.Struct({
+  currentRef: TrimmedNonEmptyStringSchema,
+  currentHead: TrimmedNonEmptyStringSchema,
+  targetHead: TrimmedNonEmptyStringSchema,
+});
+
 export const VcsSwitchRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,
   /** Local-branch checkout after native work admission and a fresh Git preflight. */
-  guarded: Schema.optional(
-    Schema.Struct({
-      currentRef: TrimmedNonEmptyStringSchema,
-      currentHead: TrimmedNonEmptyStringSchema,
-      targetHead: TrimmedNonEmptyStringSchema,
-    }),
-  ),
+  guarded: Schema.optional(CheckoutGuard),
 });
 export type VcsSwitchRefInput = typeof VcsSwitchRefInput.Type;
+
+// A separate RPC name makes older servers reject the action before Git runs.
+export const VcsSwitchRefGuardedInput = Schema.Struct({
+  ...VcsSwitchRefInput.fields,
+  guarded: CheckoutGuard,
+});
 
 export const VcsInitInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
