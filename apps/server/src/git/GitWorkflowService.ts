@@ -448,7 +448,29 @@ export const make = Effect.gen(function* () {
       ),
     deleteLocalBranch: (input) =>
       ensureGitCommand("GitWorkflowService.deleteLocalBranch", input.cwd).pipe(
-        Effect.andThen(git.deleteLocalBranch(input)),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(
+            handle.repository.rootPath,
+            input.expectedHead
+              ? eventSink
+                  .withCheckoutAdmission(handle.repository.rootPath, git.deleteLocalBranch(input))
+                  .pipe(
+                    Effect.provideService(FileSystem.FileSystem, fs),
+                    Effect.provideService(Path.Path, path),
+                    Effect.catchTags({
+                      CheckoutAdmissionError: (cause) =>
+                        new GitCommandError({
+                          operation: "GitWorkflowService.deleteLocalBranch",
+                          command: "branch",
+                          cwd: input.cwd,
+                          detail: cause.message,
+                          cause,
+                        }),
+                    }),
+                  )
+              : git.deleteLocalBranch(input),
+          ),
+        ),
       ),
     createRef: (input) =>
       ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(
@@ -461,18 +483,28 @@ export const make = Effect.gen(function* () {
     switchRef: (input) =>
       ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
         Effect.flatMap((handle) =>
-          withCheckoutLease(handle.repository.rootPath,
+          withCheckoutLease(
+            handle.repository.rootPath,
             input.guarded
-              ? eventSink.withCheckoutAdmission(handle.repository.rootPath, Effect.scoped(git.switchRef(input))).pipe(
-                  Effect.provideService(FileSystem.FileSystem, fs),
-                  Effect.provideService(Path.Path, path),
-                  Effect.catchTags({
-                    CheckoutAdmissionError: (cause) => new GitCommandError({
-                      operation: "GitWorkflowService.switchRef", command: "checkout",
-                      cwd: input.cwd, detail: cause.message, cause,
+              ? eventSink
+                  .withCheckoutAdmission(
+                    handle.repository.rootPath,
+                    Effect.scoped(git.switchRef(input)),
+                  )
+                  .pipe(
+                    Effect.provideService(FileSystem.FileSystem, fs),
+                    Effect.provideService(Path.Path, path),
+                    Effect.catchTags({
+                      CheckoutAdmissionError: (cause) =>
+                        new GitCommandError({
+                          operation: "GitWorkflowService.switchRef",
+                          command: "checkout",
+                          cwd: input.cwd,
+                          detail: cause.message,
+                          cause,
+                        }),
                     }),
-                  }),
-                )
+                  )
               : Effect.scoped(git.switchRef(input)),
           ),
         ),

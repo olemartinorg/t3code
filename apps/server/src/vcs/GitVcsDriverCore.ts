@@ -4279,6 +4279,25 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const deleteLocalBranch: GitVcsDriver.GitVcsDriver["Service"]["deleteLocalBranch"] = Effect.fn(
     "deleteLocalBranch",
   )(function* (input) {
+    if (input.expectedHead) {
+      const observe = (args: string[]) =>
+        executeGit("GitVcsDriver.deleteLocalBranch.preflight", input.cwd, args, {
+          timeoutMs: 5_000,
+        });
+      yield* observe(["check-ref-format", "--branch", input.refName]);
+      const head = (yield* observe([
+        "rev-parse",
+        "--verify",
+        `refs/heads/${input.refName}^{commit}`,
+      ])).stdout.trim();
+      if (head !== input.expectedHead)
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.deleteLocalBranch",
+          command: "branch",
+          cwd: input.cwd,
+          detail: "The branch changed after confirmation. Refresh and retry.",
+        });
+    }
     yield* executeGit(
       "GitVcsDriver.deleteLocalBranch",
       input.cwd,

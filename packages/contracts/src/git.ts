@@ -210,6 +210,12 @@ export const VcsSwitchRefGuardedInput = Schema.Struct({
   guarded: CheckoutGuard,
 });
 
+export const VcsDeleteLocalBranchGuardedInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  expectedHead: TrimmedNonEmptyStringSchema,
+});
+
 export const VcsInitInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   kind: Schema.optional(VcsDriverKind),

@@ -172,6 +172,7 @@ export interface GitCommitOptions {
 }
 
 export interface GitDeleteLocalBranchInput {
+  readonly expectedHead?: string;
   readonly cwd: string;
   readonly refName: string;
   readonly force?: boolean;
