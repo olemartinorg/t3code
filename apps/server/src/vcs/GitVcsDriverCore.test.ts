@@ -2863,6 +2863,79 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect(
+      "guards local deletion by the confirmed head and preserves checked out branches",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["branch", "target"]);
+          const stale = yield* driver
+            .deleteLocalBranch({
+              cwd,
+              refName: "target",
+              force: true,
+              expectedHead: "0".repeat(40),
+            })
+            .pipe(Effect.result);
+          assert.equal(stale._tag, "Failure");
+          assert.equal(yield* git(cwd, ["rev-parse", "refs/heads/target"]), head);
+          const current = yield* driver
+            .deleteLocalBranch({ cwd, refName: initialBranch, force: true, expectedHead: head })
+            .pipe(Effect.result);
+          assert.equal(current._tag, "Failure");
+          yield* driver.deleteLocalBranch({
+            cwd,
+            refName: "target",
+            force: true,
+            expectedHead: head,
+          });
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+        }),
+    );
+
+    it.effect(
+      "local deletion preserves remote refs, working files and branches in linked worktrees",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const worktree = (yield* Path.Path).join(cwd, "linked");
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["branch", "target"]);
+          yield* git(cwd, ["update-ref", "refs/remotes/origin/target", head]);
+          yield* git(cwd, ["worktree", "add", worktree, "target"]);
+          const checkedOut = yield* driver
+            .deleteLocalBranch({ cwd, refName: "target", force: true, expectedHead: head })
+            .pipe(Effect.result);
+          assert.equal(checkedOut._tag, "Failure");
+          yield* git(cwd, ["worktree", "remove", worktree]);
+          yield* git(cwd, ["checkout", "target"]);
+          yield* writeTextFile(cwd, "unpublished.txt", "unpublished commit\n");
+          yield* git(cwd, ["add", "unpublished.txt"]);
+          yield* git(cwd, ["commit", "-m", "unpublished"]);
+          const unpublishedHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["checkout", initialBranch]);
+          yield* writeTextFile(cwd, "local-work.txt", "preserved work\n");
+          yield* driver.deleteLocalBranch({
+            cwd,
+            refName: "target",
+            force: true,
+            expectedHead: unpublishedHead,
+          });
+          assert.equal(yield* git(cwd, ["rev-parse", "refs/remotes/origin/target"]), head);
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          assert.equal(
+            yield* fs.readFileString(path.join(cwd, "local-work.txt")),
+            "preserved work\n",
+          );
+        }),
+    );
+
     it.effect("rejects a missing branch without restoring a matching dirty file", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
