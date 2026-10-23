@@ -91,35 +91,39 @@ describe("effectiveSnoozed", () => {
     {
       reason: "stale failure",
       completedAt: "2026-04-10T08:00:00.000Z",
+      runtimeUpdatedAt: "2026-04-10T08:00:00.000Z",
       pending: undefined,
       wokeAt: null,
     },
     {
       reason: "fresh failure",
       completedAt: "2026-04-10T10:00:00.000Z",
+      runtimeUpdatedAt: "2026-04-10T10:00:00.000Z",
       pending: undefined,
       wokeAt: "2026-04-10T10:00:00.000Z",
     },
     {
       reason: "approval after a stale failure",
       completedAt: "2026-04-10T08:00:00.000Z",
+      runtimeUpdatedAt: "2026-04-10T11:00:00.000Z",
       pending: "approval",
       wokeAt: "2026-04-10T11:00:00.000Z",
     },
     {
       reason: "input after a stale failure",
       completedAt: "2026-04-10T08:00:00.000Z",
+      runtimeUpdatedAt: "2026-04-10T11:00:00.000Z",
       pending: "user-input",
       wokeAt: "2026-04-10T11:00:00.000Z",
     },
   ] as const)(
     "uses the wake event time for $reason despite newer metadata",
-    ({ completedAt, pending, wokeAt }) => {
+    ({ completedAt, runtimeUpdatedAt, pending, wokeAt }) => {
       const shell: ThreadSnoozeShell = {
         ...makeShell({ snoozedUntil: FUTURE_WAKE }),
         hasPendingApprovals: pending === "approval",
         hasPendingUserInput: pending === "user-input",
-        runtime: { status: "failed", updatedAt: "2026-04-10T11:00:00.000Z" },
+        runtime: { status: "failed", updatedAt: runtimeUpdatedAt },
         latestRun: { status: "failed", requestedAt: "2026-04-10T07:00:00.000Z", completedAt },
       };
       expect(effectiveSnoozed(shell, { now: NOW })).toBe(wokeAt === null);
@@ -135,7 +139,7 @@ describe("effectiveSnoozed", () => {
     ).toBe(true);
   });
 
-  it("stays snoozed when a run requested after the snooze completes", () => {
+  it("wakes when a run requested after the snooze completes", () => {
     const shell = {
       ...makeShell({ snoozedUntil: FUTURE_WAKE }),
       latestRun: {
@@ -146,12 +150,34 @@ describe("effectiveSnoozed", () => {
       },
     };
 
-    expect(effectiveSnoozed(shell, { now: NOW })).toBe(true);
-    expect(threadWokeAt(shell, { now: NOW })).toBe(null);
+    expect(effectiveSnoozed(shell, { now: NOW })).toBe(false);
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T10:30:00.000Z");
   });
 });
 
 describe("threadRaisedHandWhileSnoozed", () => {
+  it("keeps auth refresh snoozed while waking on an explicit runtime question", () => {
+    const shell = makeShell({ snoozedUntil: FUTURE_WAKE });
+    expect(
+      effectiveSnoozed(
+        {
+          ...shell,
+          source: { pendingRuntimeRequest: { kind: "auth_refresh" } },
+        } as ThreadSnoozeShell,
+        { now: NOW },
+      ),
+    ).toBe(true);
+    expect(
+      effectiveSnoozed(
+        {
+          ...shell,
+          source: { pendingRuntimeRequest: { kind: "user_input" } },
+        } as ThreadSnoozeShell,
+        { now: NOW },
+      ),
+    ).toBe(false);
+  });
+
   it("is true for approvals, input, and failures", () => {
     expect(
       threadRaisedHandWhileSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" })),
@@ -234,28 +260,28 @@ describe("hasQueuedTurnStart", () => {
 });
 
 describe("threadWokeAt", () => {
-  it("reports the timer wake even after an already-requested run completes", () => {
+  it("keeps a completion wake earlier than the elapsed timer", () => {
     expect(threadWokeAt(makeShell({ snoozedUntil: PAST_WAKE }), { now: NOW })).toBe(PAST_WAKE);
     const shell = makeShell({
       snoozedUntil: PAST_WAKE,
       turnCompletedAt: "2026-04-10T09:30:00.000Z",
     });
     expect(effectiveSnoozed(shell, { now: NOW })).toBe(false);
-    expect(threadWokeAt(shell, { now: NOW })).toBe(PAST_WAKE);
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T09:30:00.000Z");
   });
 
   it.each([
     { reason: "failure", sessionStatus: "error" },
     { reason: "approval", sessionStatus: "ready", pending: "approval" },
     { reason: "user input", sessionStatus: "ready", pending: "user-input" },
-  ] as const)("reports $reason activity instead of an already-requested completion", (activity) => {
+  ] as const)("retains an early completion wake alongside $reason activity", (activity) => {
     const shell = makeShell({
       ...activity,
       snoozedUntil: FUTURE_WAKE,
       turnCompletedAt: "2026-04-10T10:30:00.000Z",
     });
     expect(effectiveSnoozed(shell, { now: NOW })).toBe(false);
-    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T11:00:00.000Z");
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T10:30:00.000Z");
   });
 
   it("keeps the early wake authoritative after the scheduled time passes", () => {
@@ -268,7 +294,7 @@ describe("threadWokeAt", () => {
         completedAt: "2026-04-10T09:30:00.000Z",
       },
     };
-    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T09:30:00.000Z");
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T11:00:00.000Z");
   });
 });
 
