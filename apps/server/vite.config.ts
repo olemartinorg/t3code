@@ -83,7 +83,13 @@ export default mergeConfig(
     pack: {
       // The executable embeds one entry; the history worker becomes a hidden
       // subcommand there instead of a sibling script.
-      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts", "scripts/reconcile-sandbox-composer-migrations.ts"],
+      entry: packExecutable
+        ? ["src/bin.ts"]
+        : {
+            bin: "src/bin.ts",
+            "claude-history-worker": "src/claude-history-worker.ts",
+            "reconcile-sandbox-composer-migrations": "scripts/reconcile-sandbox-composer-migrations.ts",
+          },
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
       clean: true,
