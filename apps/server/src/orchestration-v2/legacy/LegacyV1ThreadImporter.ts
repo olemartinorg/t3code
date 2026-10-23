@@ -461,7 +461,11 @@ const make = Effect.gen(function* () {
         thread.branch_pull_request_json,
         thread.active_order_key,
         thread.deleted_at,
-        (SELECT MAX(completed_at) FROM projection_turns WHERE thread_id = thread.thread_id) AS last_completion_at,
+        (SELECT MAX(json_extract(event.payload_json, '$.completedAt'))
+         FROM orchestration_events AS event
+         WHERE event.aggregate_kind = 'thread' AND event.stream_id = thread.thread_id
+           AND event.application_event_version = 1
+           AND event.event_type = 'thread.turn-diff-completed') AS last_completion_at,
         projection.payload_json
       FROM orchestration_v2_legacy_imports AS legacy_import
       INNER JOIN projection_threads AS thread
@@ -489,7 +493,10 @@ const make = Effect.gen(function* () {
       const legacyPullRequests = legacy.pullRequests ?? [];
       const repaired: OrchestrationV2AppThread = {
         ...current,
-        lastCompletionAt: current.lastCompletionAt === undefined ? legacy.lastCompletionAt : current.lastCompletionAt,
+        lastCompletionAt:
+          current.lastCompletionAt === undefined
+            ? legacy.lastCompletionAt
+            : current.lastCompletionAt,
         pinnedAt: current.pinnedAt === undefined ? legacy.pinnedAt : current.pinnedAt,
         autoSettleDisabledAt:
           current.autoSettleDisabledAt === undefined
@@ -568,7 +575,11 @@ const make = Effect.gen(function* () {
         thread.branch_pull_request_json,
         thread.active_order_key,
         thread.deleted_at,
-        (SELECT MAX(completed_at) FROM projection_turns WHERE thread_id = thread.thread_id) AS last_completion_at
+        (SELECT MAX(json_extract(event.payload_json, '$.completedAt'))
+         FROM orchestration_events AS event
+         WHERE event.aggregate_kind = 'thread' AND event.stream_id = thread.thread_id
+           AND event.application_event_version = 1
+           AND event.event_type = 'thread.turn-diff-completed') AS last_completion_at
       FROM projection_threads AS thread
       WHERE NOT EXISTS (
         SELECT 1

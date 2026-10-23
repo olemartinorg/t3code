@@ -150,6 +150,40 @@ it.effect("propagates interruption from transcript reads and retry-marker writes
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect(
+  "preserves legacy completion timestamps after obsolete V1 turn projections are dropped",
+  () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      yield* sql`
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type,
+        occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+      ) VALUES (
+        'legacy-completion', 'thread', 'thread:first', 1, 'thread.turn-diff-completed',
+        '2026-01-03T00:00:00.000Z', 'system',
+        '{"turnId":"turn:legacy","completedAt":"2026-01-02T12:34:56.000Z"}', '{}', 1
+      )
+    `;
+      yield* seedPendingTranscripts;
+      yield* sql`UPDATE orchestration_v2_projection_threads
+      SET payload_json = json_remove(payload_json, '$.lastCompletionAt')
+      WHERE thread_id = 'thread:first'`;
+      yield* importer.reconcileShells;
+      const projection = yield* projections.getThreadProjection(ThreadId.make("thread:first"));
+      assert.deepStrictEqual(
+        projection.thread.lastCompletionAt,
+        DateTime.makeUnsafe("2026-01-02T12:34:56.000Z"),
+      );
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master WHERE name = 'projection_turns'`,
+        [],
+      );
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
   it.effect("imports lightweight shells, hydrates transcripts, and remains idempotent", () =>
     Effect.gen(function* () {
