@@ -80,32 +80,37 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
 }
 
 /**
- * Only a request for the user or a fresh failure ends a snooze early. Completed runs never do:
- * a snoozed long-running thread keeps waking itself for background work and stays hidden
- * until its timer.
+ * Sandbox retains early wakes for user requests, fresh runtime failures and runs
+ * completed after Snooze. Authorization refresh alone does not wake a conversation.
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
-  if (shell.source?.pendingRuntimeRequest != null) return true;
+  if (
+    shell.source?.pendingRuntimeRequest != null &&
+    shell.source.pendingRuntimeRequest.kind !== "auth_refresh"
+  )
+    return true;
   if (shell.pendingSubagentRequest != null) return true;
-  const failedAt = failureEdgeAt(shell);
-  return (
-    failedAt !== undefined &&
-    (shell.snoozedAt == null ||
-      (failedAt != null && Date.parse(failedAt) > Date.parse(shell.snoozedAt)))
-  );
-}
-
-// V2 runtime.updatedAt includes metadata writes; prefer the failed run's completion.
-// Legacy sessions only expose the runtime timestamp.
-function failureEdgeAt(shell: ThreadSnoozeShell): string | null | undefined {
   const runtime = shell.runtime ?? shell.session ?? null;
-  if (runtime?.status !== "error" && runtime?.status !== "failed") return undefined;
   const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
-  if (latestRun?.status === "failed" && latestRun.completedAt != null) {
-    return latestRun.completedAt;
+  // Retain the host's runtime timestamp comparison for failure wakes.
+  // Snoozing an already failed thread hides it until newer runtime activity.
+  if (
+    (runtime?.status === "error" || runtime?.status === "failed") &&
+    (shell.snoozedAt == null ||
+      (runtime.updatedAt != null && Date.parse(runtime.updatedAt) > Date.parse(shell.snoozedAt)))
+  ) {
+    return true;
   }
-  return runtime.updatedAt ?? null;
+  if (
+    shell.snoozedAt != null &&
+    (latestRun?.state === "completed" || latestRun?.status === "completed") &&
+    latestRun.completedAt != null &&
+    Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function canSnooze(
@@ -154,17 +159,19 @@ export function threadWokeAt(
   // indicator the user already cleared by visiting (snoozedUntil is newer
   // than that visit's lastVisitedAt).
   if (threadRaisedHandWhileSnoozed(shell)) {
-    // An old failure must not replace the activity time of an approval or input wake.
-    const failedAt = failureEdgeAt(shell);
-    if (
-      failedAt != null &&
-      (shell.snoozedAt == null || Date.parse(failedAt) > Date.parse(shell.snoozedAt))
-    ) {
-      return failedAt;
-    }
+    const latestRun = shell.latestRun ?? shell.latestTurn ?? null;
     const runtime = shell.runtime ?? shell.session ?? null;
+    if (
+      shell.snoozedAt != null &&
+      (latestRun?.state === "completed" || latestRun?.status === "completed") &&
+      latestRun.completedAt != null &&
+      Date.parse(latestRun.completedAt) > Date.parse(shell.snoozedAt)
+    ) {
+      return latestRun.completedAt;
+    }
     return runtime?.updatedAt ?? shell.snoozedAt ?? null;
   }
+  // No raised hand: woke iff the timer elapsed (still-snoozed → null).
   return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
 }
 
