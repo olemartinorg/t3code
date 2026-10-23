@@ -1,12 +1,12 @@
 export { ThreadAgentsSheet } from "../features/threads/ThreadAgentsSheet";
 export { RenderFailureView } from "../components/RenderErrorBoundary";
 export { HardwareKeyboardCommandProvider } from "../features/keyboard/HardwareKeyboardCommandProvider";
-export { OverlayPortalHost } from "../components/OverlayPortal";
+export { OverlayPortalHost } from "../components/ui/OverlayPortal";
 export {
   SettingsEnvironmentFilterProvider,
   useSettingsEnvironmentFilter,
 } from "../features/settings/settings-environment-filter";
-export { ConfirmDialogHost } from "../components/ConfirmDialogHost";
+export { Host as DialogHost } from "../components/ui/Dialog";
 export { VoiceInputProvider } from "../features/voice-input/VoiceInputProvider";
 export { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
 export {

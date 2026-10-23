@@ -1,3 +1,4 @@
+diff --git a/android/CMakeLists.txt b/android/CMakeLists.txt
 --- a/android/CMakeLists.txt
 +++ b/android/CMakeLists.txt
 @@ -8,6 +8,7 @@
