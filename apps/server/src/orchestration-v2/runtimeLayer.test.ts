@@ -2155,6 +2155,29 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         linked?.pullRequests?.map(({ host, repository, number }) => ({ host, repository, number })),
         [1, 2].map((number) => ({ host: "github.com", repository: "pingdotgg/t3code", number })),
       );
+      const original = linked?.pullRequests?.find((link) => link.number === 1);
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.link",
+        commandId: CommandId.make("multi-pr-agent-adoption"),
+        threadId,
+        ...key,
+        number: 1,
+        url: "https://github.com/pingdotgg/t3code/pull/1",
+        source: "agent",
+      });
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.find(
+          (link) => link.number === 1,
+        ),
+        { ...original, source: "agent" },
+      );
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.deepEqual(
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.find(
+          (link) => link.number === 1,
+        ),
+        { ...original, source: "agent" },
+      );
       yield* orchestrator.dispatch({
         type: "thread.pull-request.unlink",
         commandId: CommandId.make("multi-pr-dismiss"),

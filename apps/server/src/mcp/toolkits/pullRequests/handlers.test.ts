@@ -450,7 +450,7 @@ describe("pull request toolkit handlers", () => {
   it.effect("treats a duplicate link as alreadyLinked rather than an error", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
-        thread: makeThread([makeLink(123)]),
+        thread: makeThread([makeLink(123, { source: "agent" })]),
         reject: (command) =>
           command.type === "thread.pull-request.link" ? "already linked" : null,
       });
@@ -460,6 +460,21 @@ describe("pull request toolkit handlers", () => {
       expect(result.alreadyLinked).toBe(true);
     }),
   );
+
+  for (const source of ["manual", "stack"] as const) {
+    it.effect(`records explicit agent adoption of an existing ${source} link`, () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({ thread: makeThread([makeLink(123, { source })]) });
+        const result = yield* harness.call("link_pull_request", {
+          url: "https://github.com/t3tools/t3code/pull/123",
+        });
+        expect(result.alreadyLinked).toBe(false);
+        expect(yield* Ref.get(harness.commands)).toMatchObject([
+          { type: "thread.pull-request.link", number: 123, source: "agent" },
+        ]);
+      }),
+    );
+  }
 
   it.effect("unlinks a linked pull request and reports a missing one as wasLinked=false", () =>
     Effect.gen(function* () {
