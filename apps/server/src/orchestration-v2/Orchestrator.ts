@@ -3253,7 +3253,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               existing?.source === "stack-dismissed" &&
               command.source !== "stack" &&
               command.source !== "stack-dismissed";
-            if (existing && !undismisses) return thread;
+            const adopts = command.source === "agent" && existing?.source !== "agent";
+            if (existing && !undismisses && !adopts) return thread;
             const link = existing
               ? {
                   ...existing,

@@ -355,8 +355,7 @@ const make = Effect.gen(function* () {
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );
-        if (existing && existing.source !== "stack-dismissed")
-          return { ...target, alreadyLinked: true };
+        if (existing?.source === "agent") return { ...target, alreadyLinked: true };
         const alreadyLinked = yield* engine
           .dispatch({
             type: "thread.pull-request.link",
