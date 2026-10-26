@@ -76,6 +76,73 @@ const fixture = Effect.gen(function* () {
   return { fs, cwd, orchestrator, sink, threadId };
 });
 
+const completedRoot = Effect.fn("CheckoutAdmissionTest.completedRoot")(function* (
+  orchestrator: Orchestrator.OrchestratorV2["Service"],
+  sink: EventSink.EventSinkV2["Service"],
+  threadId: ThreadId,
+) {
+  yield* orchestrator.dispatch({
+    type: "message.dispatch",
+    commandId: CommandId.make("root-start"),
+    threadId,
+    messageId: MessageId.make("root-message"),
+    text: "Root",
+    attachments: [],
+    dispatchMode: { type: "defer_start" },
+    createdBy: "user",
+    creationSource: "web",
+  });
+  const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+  const now = yield* DateTime.now;
+  yield* sink.write({
+    events: [
+      {
+        id: EventId.make("root-completed"),
+        type: "run.updated",
+        threadId,
+        occurredAt: now,
+        payload: { ...run, status: "completed", completedAt: now },
+      },
+    ],
+  });
+});
+
+const nativeBackground = Effect.fn("CheckoutAdmissionTest.nativeBackground")(function* (
+  sink: EventSink.EventSinkV2["Service"],
+  threadId: ThreadId,
+  kind: "subagent" | "monitor",
+) {
+  const now = yield* DateTime.now;
+  yield* sink.write({
+    events: [
+      {
+        id: EventId.make("background-reported"),
+        type: "provider-thread.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: ProviderThreadId.make("reported-provider-thread"),
+          driver,
+          providerInstanceId: instanceId,
+          providerSessionId: null,
+          appThreadId: threadId,
+          ownerNodeId: null,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "idle",
+          firstRunOrdinal: null,
+          lastRunOrdinal: null,
+          handoffIds: [],
+          forkedFrom: null,
+          pendingBackgroundTasks: [{ kind, taskId: "reported-child" }],
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    ],
+  });
+});
+
 it.effect.each(["todo_list", "plan", "tool_call", "root_turn"] as const)(
   "ignores historical %s status after its run completes",
   (kind) =>
@@ -133,7 +200,7 @@ it.effect.each(["todo_list", "plan", "tool_call", "root_turn"] as const)(
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
-it.effect("ignores terminal failed effects but blocks pending and running effects", () =>
+it.effect("outbox records alone never override an idle native shell", () =>
   Effect.gen(function* () {
     const { cwd, sink, threadId } = yield* fixture;
     const outbox = yield* EffectOutbox.EffectOutboxV2;
@@ -148,10 +215,9 @@ it.effect("ignores terminal failed effects but blocks pending and running effect
         },
       ],
     });
-    const refuse = sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip);
-    assert.equal((yield* refuse).reason, "active-work");
+    yield* sink.withCheckoutAdmission(cwd, Effect.void);
     yield* outbox.claimNext({ workerId: "test-worker", leaseDurationMs: 60_000 });
-    assert.equal((yield* refuse).reason, "active-work");
+    yield* sink.withCheckoutAdmission(cwd, Effect.void);
     assert.isTrue(
       yield* outbox.fail({
         effectId: "failed-start",
@@ -263,7 +329,7 @@ it.effect.each(["app_owned", "provider_native"] as const)(
   "blocks %s subagent work after its root turn ends, including overlapping paths",
   (origin) =>
     Effect.gen(function* () {
-      const { fs, cwd, sink, threadId } = yield* fixture;
+      const { fs, cwd, sink, threadId, orchestrator } = yield* fixture;
       const path = yield* Path.Path;
       const nested = path.join(cwd, "nested");
       const sibling = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkout-sibling-" });
@@ -302,6 +368,9 @@ it.effect.each(["app_owned", "provider_native"] as const)(
           },
         ],
       });
+      // Native background work belongs to a settled root, not an orphan table row.
+      yield* completedRoot(orchestrator, sink, threadId);
+      yield* nativeBackground(sink, threadId, "subagent");
       for (const checkout of [cwd, nested, alias]) {
         const error = yield* sink.withCheckoutAdmission(checkout, Effect.void).pipe(Effect.flip);
         assert.equal(error.reason, "active-work");
@@ -310,77 +379,77 @@ it.effect.each(["app_owned", "provider_native"] as const)(
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
-it.effect("blocks provider-native pending turns and background work without a root run", () =>
-  Effect.gen(function* () {
-    const { cwd, sink, threadId } = yield* fixture;
-    const now = yield* DateTime.now;
-    const providerThreadId = ProviderThreadId.make("native-provider-thread");
-    const turn = {
-      id: ProviderTurnId.make("pending-native-turn"),
-      providerThreadId,
-      nodeId: NodeId.make("native-node"),
-      runAttemptId: null,
-      nativeTurnRef: null,
-      ordinal: 1,
-      status: "pending" as const,
-      startedAt: null,
-      completedAt: null,
-    };
-    yield* sink.write({
-      events: [
-        {
-          id: EventId.make("pending-native-turn-event"),
-          type: "provider-turn.updated",
-          threadId,
-          occurredAt: now,
-          payload: turn,
-        },
-      ],
-    });
-    assert.equal(
-      (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
-      "active-work",
-    );
-    yield* sink.write({
-      events: [
-        {
-          id: EventId.make("finished-native-turn-event"),
-          type: "provider-turn.updated",
-          threadId,
-          occurredAt: now,
-          payload: { ...turn, status: "completed", completedAt: now },
-        },
-        {
-          id: EventId.make("native-background-event"),
-          type: "provider-thread.updated",
-          threadId,
-          occurredAt: now,
-          payload: {
-            id: providerThreadId,
-            driver,
-            providerInstanceId: instanceId,
-            providerSessionId: null,
-            appThreadId: threadId,
-            ownerNodeId: null,
-            nativeThreadRef: null,
-            nativeConversationHeadRef: null,
-            status: "idle",
-            firstRunOrdinal: null,
-            lastRunOrdinal: null,
-            handoffIds: [],
-            forkedFrom: null,
-            pendingBackgroundTasks: [{ kind: "background_task", taskId: "native-background" }],
-            createdAt: now,
-            updatedAt: now,
+it.effect(
+  "ignores an orphan provider turn, but blocks native monitoring after a settled root",
+  () =>
+    Effect.gen(function* () {
+      const { cwd, sink, threadId, orchestrator } = yield* fixture;
+      const now = yield* DateTime.now;
+      const providerThreadId = ProviderThreadId.make("native-provider-thread");
+      const turn = {
+        id: ProviderTurnId.make("pending-native-turn"),
+        providerThreadId,
+        nodeId: NodeId.make("native-node"),
+        runAttemptId: null,
+        nativeTurnRef: null,
+        ordinal: 1,
+        status: "pending" as const,
+        startedAt: null,
+        completedAt: null,
+      };
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("pending-native-turn-event"),
+            type: "provider-turn.updated",
+            threadId,
+            occurredAt: now,
+            payload: turn,
           },
-        },
-      ],
-    });
-    assert.equal(
-      (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
-      "active-work",
-    );
-  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+        ],
+      });
+      yield* sink.withCheckoutAdmission(cwd, Effect.void);
+      yield* completedRoot(orchestrator, sink, threadId);
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("finished-native-turn-event"),
+            type: "provider-turn.updated",
+            threadId,
+            occurredAt: now,
+            payload: { ...turn, status: "completed", completedAt: now },
+          },
+          {
+            id: EventId.make("native-background-event"),
+            type: "provider-thread.updated",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: providerThreadId,
+              driver,
+              providerInstanceId: instanceId,
+              providerSessionId: null,
+              appThreadId: threadId,
+              ownerNodeId: null,
+              nativeThreadRef: null,
+              nativeConversationHeadRef: null,
+              status: "idle",
+              firstRunOrdinal: null,
+              lastRunOrdinal: null,
+              handoffIds: [],
+              forkedFrom: null,
+              pendingBackgroundTasks: [{ kind: "monitor", taskId: "native-background" }],
+              createdAt: now,
+              updatedAt: now,
+            },
+          },
+        ],
+      });
+      assert.equal(
+        (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
+        "active-work",
+      );
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
 it.effect("releases native admission after checkout failure and cancellation", () =>
@@ -404,25 +473,24 @@ it.effect("releases native admission after checkout failure and cancellation", (
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
-it.effect("blocks an already committed provider-start effect before any run is visible", () =>
-  Effect.gen(function* () {
-    const { cwd, sink, threadId } = yield* fixture;
-    yield* sink.writeWithEffects({
-      events: [],
-      effects: [
-        {
-          id: "pending-provider-start",
-          commandId: CommandId.make("pending-provider-start"),
-          threadId,
-          request: { type: "provider-turn.start", runId: RunId.make("pending-provider-run") },
-        },
-      ],
-    });
-    assert.equal(
-      (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
-      "active-work",
-    );
-  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+it.effect(
+  "an orphan provider-start effect does not invent activity missing from the native shell",
+  () =>
+    Effect.gen(function* () {
+      const { cwd, sink, threadId } = yield* fixture;
+      yield* sink.writeWithEffects({
+        events: [],
+        effects: [
+          {
+            id: "pending-provider-start",
+            commandId: CommandId.make("pending-provider-start"),
+            threadId,
+            request: { type: "provider-turn.start", runId: RunId.make("pending-provider-run") },
+          },
+        ],
+      });
+      yield* sink.withCheckoutAdmission(cwd, Effect.void);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
 it.effect(
@@ -436,16 +504,16 @@ it.effect(
         threadId,
         worktreePath: null,
       });
-      yield* sink.writeWithEffects({
-        events: [],
-        effects: [
-          {
-            id: "project-checkout-start",
-            commandId: CommandId.make("project-checkout-start"),
-            threadId,
-            request: { type: "provider-turn.start", runId: RunId.make("project-checkout-run") },
-          },
-        ],
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("project-checkout-start"),
+        threadId,
+        messageId: MessageId.make("project-checkout-message"),
+        text: "Current work",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource: "web",
       });
       assert.equal(
         (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
