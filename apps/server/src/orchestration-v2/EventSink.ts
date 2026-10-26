@@ -314,23 +314,28 @@ const layerBase: Layer.Layer<
           return contains(relative) || contains(reverse);
         };
         // Include archived/deleted owners and committed effects, even before a
-        // provider-start worker claims them. Do not hydrate conversation history.
+        // provider-start worker claims them. Timeline node status is historical
+        // presentation, not execution authority. Failed effects are terminal.
         const threads = yield* sql<{
           readonly thread_id: string;
         }>`SELECT thread_id FROM orchestration_v2_projection_threads`;
         const effects = yield* sql<{ readonly thread_id: string }>`
         SELECT DISTINCT thread_id FROM orchestration_v2_effect_outbox
-        WHERE status IN ('pending', 'running', 'failed')
+        WHERE status IN ('pending', 'running')
           AND effect_type NOT IN ('thread-title.generate', 'preview.cleanup', 'attachment.cleanup')
       `;
         const effectOwners = new Set(effects.map((row) => row.thread_id));
+        const schedules = yield* sql<{ readonly thread_id: string }>`
+          SELECT DISTINCT thread_id FROM scheduled_tasks
+          WHERE enabled = 1 AND thread_id IS NOT NULL
+        `;
+        const scheduleOwners = new Set(schedules.map((row) => row.thread_id));
         const knownOwners = new Set(threads.map((row) => row.thread_id));
-        if (effects.some((row) => !knownOwners.has(row.thread_id)))
+        if ([...effects, ...schedules].some((row) => !knownOwners.has(row.thread_id)))
           return yield* new CheckoutAdmissionError({ cwd, reason: "unknown-ownership" });
         for (const { thread_id } of threads) {
           const projection = yield* projectionStore.getThreadRecords(ThreadId.make(thread_id), [
             "runs",
-            "nodes",
             "subagents",
             "providerSessions",
             "providerThreads",
@@ -339,11 +344,9 @@ const layerBase: Layer.Layer<
           ]);
           const active =
             effectOwners.has(thread_id) ||
+            scheduleOwners.has(thread_id) ||
             projection.runs.some((run) =>
               ["queued", "preparing", "starting", "running", "waiting"].includes(run.status),
-            ) ||
-            projection.nodes.some((node) =>
-              ["pending", "running", "waiting"].includes(node.status),
             ) ||
             projection.subagents.some((agent) =>
               ["pending", "running", "waiting"].includes(agent.status),
