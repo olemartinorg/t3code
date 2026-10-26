@@ -15,6 +15,8 @@ export type MobileIntegration = {
   }) => (() => void) | void;
   defaultThemeMode?: "light" | "dark" | "system";
   renderHtmlAttachments?: boolean;
+  /** Authentication for the HTML document request, never injected into the page. */
+  htmlRenderHeaders?: (url: string) => Record<string, string>;
   downloadAttachment?: (url: string, file: File, signal: AbortSignal) => Promise<void>;
   uploadAttachment?: (
     url: string,

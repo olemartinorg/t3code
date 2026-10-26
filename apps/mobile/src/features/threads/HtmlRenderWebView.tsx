@@ -15,6 +15,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { mobileIntegration } from "../../embedding/integration";
 import { mobileHtmlRenderTheme } from "../../lib/htmlRenderTheme";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
@@ -92,7 +93,10 @@ export function HtmlRenderWebView(props: {
   const crashes = useRef(0);
   const shownTheme = useRef<HtmlRenderTheme | null>(null);
   const source = useMemo(
-    () => ({ uri: props.uri + htmlRenderThemeFragment(initialTheme) }),
+    () => ({
+      uri: props.uri + htmlRenderThemeFragment(initialTheme),
+      headers: mobileIntegration().htmlRenderHeaders?.(props.uri),
+    }),
     [props.uri, initialTheme],
   );
   useEffect(() => {
