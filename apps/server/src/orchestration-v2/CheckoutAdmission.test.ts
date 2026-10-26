@@ -22,9 +22,11 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -47,6 +49,8 @@ const layerTest = Layer.mergeAll(
     { databaseLayer: SqlitePersistence.layerMemory, runEffectWorker: false },
   ),
   ProjectStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+  EffectOutbox.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+  SqlitePersistence.layerMemory,
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 const fixture = Effect.gen(function* () {
@@ -71,6 +75,125 @@ const fixture = Effect.gen(function* () {
   });
   return { fs, cwd, orchestrator, sink, threadId };
 });
+
+it.effect.each(["todo_list", "plan", "tool_call", "root_turn"] as const)(
+  "ignores historical %s status after its run completes",
+  (kind) =>
+    Effect.gen(function* () {
+      const { cwd, sink, threadId, orchestrator } = yield* fixture;
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("historical-start"),
+        threadId,
+        messageId: MessageId.make("historical-message"),
+        text: "Old work",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      const run = projection.runs[0]!;
+      const now = yield* DateTime.now;
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("historical-run-completed"),
+            type: "run.updated",
+            threadId,
+            occurredAt: now,
+            payload: { ...run, status: "completed", completedAt: now },
+          },
+          {
+            id: EventId.make("historical-node"),
+            type: "node.updated",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: NodeId.make("historical-node"),
+              threadId,
+              runId: run.id,
+              parentNodeId: null,
+              rootNodeId: NodeId.make("historical-node"),
+              kind,
+              status: "running",
+              countsForRun: kind === "root_turn",
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              runtimeRequestId: null,
+              checkpointScopeId: null,
+              startedAt: now,
+              completedAt: null,
+            },
+          },
+        ],
+      });
+      yield* sink.withCheckoutAdmission(cwd, Effect.void);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("ignores terminal failed effects but blocks pending and running effects", () =>
+  Effect.gen(function* () {
+    const { cwd, sink, threadId } = yield* fixture;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
+    yield* sink.writeWithEffects({
+      events: [],
+      effects: [
+        {
+          id: "failed-start",
+          commandId: CommandId.make("failed-start"),
+          threadId,
+          request: { type: "provider-turn.start", runId: RunId.make("failed-run") },
+        },
+      ],
+    });
+    const refuse = sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip);
+    assert.equal((yield* refuse).reason, "active-work");
+    yield* outbox.claimNext({ workerId: "test-worker", leaseDurationMs: 60_000 });
+    assert.equal((yield* refuse).reason, "active-work");
+    assert.isTrue(
+      yield* outbox.fail({
+        effectId: "failed-start",
+        workerId: "test-worker",
+        error: "Past failure",
+      }),
+    );
+    yield* sink.withCheckoutAdmission(cwd, Effect.void);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("blocks enabled monitoring schedules until they are disabled", () =>
+  Effect.gen(function* () {
+    const { cwd, sink, threadId } = yield* fixture;
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO scheduled_tasks ${sql.insert({
+      task_id: "checkout-monitor",
+      title: "Monitor",
+      prompt: "Wait",
+      enabled: 1,
+      schedule_json: "{}",
+      project_id: "checkout-project",
+      thread_id: threadId,
+      workspace_strategy_json: "{}",
+      model_selection_json: "{}",
+      runtime_mode: "full-access",
+      interaction_mode: "default",
+      created_by: "agent",
+      creation_source: "mcp",
+      created_at: "2026-10-26T00:00:00Z",
+      updated_at: "2026-10-26T00:00:00Z",
+      last_run_status: "never",
+      run_count: 0,
+    })}`;
+    assert.equal(
+      (yield* sink.withCheckoutAdmission(cwd, Effect.void).pipe(Effect.flip)).reason,
+      "active-work",
+    );
+    yield* sql`UPDATE scheduled_tasks SET enabled = 0 WHERE task_id = 'checkout-monitor'`;
+    yield* sink.withCheckoutAdmission(cwd, Effect.void);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
 
 it.effect.each(["direct", "scheduled", "delegated"] as const)(
   "holds %s native turn admission until checkout finishes",
