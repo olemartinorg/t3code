@@ -313,81 +313,48 @@ const layerBase: Layer.Layer<
             (!path.isAbsolute(value) && value !== ".." && !value.startsWith(`..${path.sep}`));
           return contains(relative) || contains(reverse);
         };
-        // Include archived/deleted owners and committed effects, even before a
-        // provider-start worker claims them. Timeline node status is historical
-        // presentation, not execution authority. Failed effects are terminal.
-        const threads = yield* sql<{
-          readonly thread_id: string;
-        }>`SELECT thread_id FROM orchestration_v2_projection_threads`;
-        const effects = yield* sql<{ readonly thread_id: string }>`
-        SELECT DISTINCT thread_id FROM orchestration_v2_effect_outbox
-        WHERE status IN ('pending', 'running')
-          AND effect_type NOT IN ('thread-title.generate', 'preview.cleanup', 'attachment.cleanup')
-      `;
-        const effectOwners = new Set(effects.map((row) => row.thread_id));
+        // Recheck the same native shell activity used by Sandbox's branch button.
+        // Old outbox, provider and checklist records do not define a second policy.
+        const threads = yield* sql<{ readonly thread_id: string }>`
+          SELECT thread_id FROM orchestration_v2_projection_threads
+        `;
         const schedules = yield* sql<{ readonly thread_id: string }>`
           SELECT DISTINCT thread_id FROM scheduled_tasks
           WHERE enabled = 1 AND thread_id IS NOT NULL
         `;
         const scheduleOwners = new Set(schedules.map((row) => row.thread_id));
         const knownOwners = new Set(threads.map((row) => row.thread_id));
-        if ([...effects, ...schedules].some((row) => !knownOwners.has(row.thread_id)))
+        if (schedules.some((row) => !knownOwners.has(row.thread_id)))
           return yield* new CheckoutAdmissionError({ cwd, reason: "unknown-ownership" });
+        const executionStates = new Set(["preparing", "queued", "starting", "running", "waiting"]);
         for (const { thread_id } of threads) {
-          const projection = yield* projectionStore.getThreadRecords(ThreadId.make(thread_id), [
-            "runs",
-            "subagents",
-            "providerSessions",
-            "providerThreads",
-            "providerTurns",
-            "runtimeRequests",
-          ]);
+          const shell = yield* projectionStore.getThreadShell(ThreadId.make(thread_id));
+          if (!shell) continue;
           const active =
-            effectOwners.has(thread_id) ||
-            scheduleOwners.has(thread_id) ||
-            projection.runs.some((run) =>
-              ["queued", "preparing", "starting", "running", "waiting"].includes(run.status),
-            ) ||
-            projection.subagents.some((agent) =>
-              ["pending", "running", "waiting"].includes(agent.status),
-            ) ||
-            projection.providerTurns.some((turn) => ["pending", "running"].includes(turn.status)) ||
-            projection.providerSessions.some((session) =>
-              ["starting", "running", "waiting"].includes(session.status),
-            ) ||
-            projection.providerThreads.some(
-              (thread) =>
-                thread.status === "active" ||
-                thread.goal?.status === "active" ||
-                (thread.pendingBackgroundTasks?.length ?? 0) > 0,
-            ) ||
-            projection.runtimeRequests.some((request) => request.status === "pending");
+            executionStates.has(shell.status) ||
+            executionStates.has(shell.activityRunStatus ?? "") ||
+            (shell.pendingBackgroundTasks?.some(
+              (task) => task.kind === "monitor" || task.kind === "subagent",
+            ) ??
+              false) ||
+            scheduleOwners.has(thread_id);
           if (!active) continue;
-          const project = yield* projectStore.get(projection.thread.projectId, {
+          const project = yield* projectStore.get(shell.projectId, {
             includeDeleted: true,
           });
-          const workspaceRoot =
-            projection.thread.worktreePath ?? Option.getOrUndefined(project)?.workspaceRoot;
+          const workspaceRoot = shell.worktreePath ?? Option.getOrUndefined(project)?.workspaceRoot;
           if (workspaceRoot === undefined)
             return yield* new CheckoutAdmissionError({
               cwd,
               reason: "unknown-ownership",
-              threadId: projection.thread.id,
+              threadId: shell.id,
             });
-          const workspaces = new Set([
-            workspaceRoot,
-            ...projection.providerSessions
-              .filter((session) => session.status !== "stopped" && session.status !== "error")
-              .map((session) => session.cwd),
-          ]);
-          for (const workspace of workspaces) {
-            if (overlaps(yield* fs.realPath(workspace)))
-              return yield* new CheckoutAdmissionError({
-                cwd,
-                reason: "active-work",
-                threadId: projection.thread.id,
-              });
-          }
+          if (overlaps(yield* fs.realPath(workspaceRoot)))
+            return yield* new CheckoutAdmissionError({
+              cwd,
+              reason: "active-work",
+              threadId: shell.id,
+            });
         }
       }).pipe(
         Effect.mapError((cause) =>
