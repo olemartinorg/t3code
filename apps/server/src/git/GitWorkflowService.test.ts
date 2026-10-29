@@ -33,6 +33,148 @@ function layer(input: {
 }
 
 describe("GitWorkflowService", () => {
+  it.effect.each([false, true])(
+    "guarded advancement overrides squash, holds admission and preserves dirty checkouts, prepared merge=%s",
+    (preparedMerge) => {
+      const admission = { active: false, held: false, visits: 0 };
+      return Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-advance-branch-" });
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        const git = (args: string[]) =>
+          driver
+            .execute({ operation: "test.advanceBranch", cwd, args })
+            .pipe(Effect.map((result) => result.stdout.trim()));
+        yield* git(["init", "-qb", "main"]);
+        yield* git([
+          "-c",
+          "user.email=t@t",
+          "-c",
+          "user.name=t",
+          "commit",
+          "--allow-empty",
+          "-qm",
+          "base",
+        ]);
+        let expectedHead = yield* git(["rev-parse", "HEAD"]);
+        yield* git(["switch", "-qc", "remote"]);
+        yield* fs.writeFileString(`${cwd}/new`, "remote contents\n");
+        yield* git(["add", "new"]);
+        yield* git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "remote"]);
+        const remoteHead = yield* git(["rev-parse", "HEAD"]);
+        let targetHead = remoteHead;
+        yield* git(["switch", "-q", "main"]);
+        if (preparedMerge) {
+          yield* fs.writeFileString(`${cwd}/local`, "local contents\n");
+          yield* git(["add", "local"]);
+          yield* git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "local"]);
+          expectedHead = yield* git(["rev-parse", "HEAD"]);
+          const tree = yield* git(["merge-tree", "--write-tree", expectedHead, remoteHead]);
+          targetHead = yield* git([
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit-tree",
+            tree,
+            "-p",
+            expectedHead,
+            "-p",
+            remoteHead,
+            "-m",
+            "prepared merge",
+          ]);
+        }
+        yield* git(["config", "branch.main.mergeOptions", "--squash --no-commit"]);
+        const input = { cwd, refName: "main", expectedHead, targetHead };
+        admission.active = true;
+        const busy = yield* workflow.advanceBranch(input).pipe(Effect.flip);
+        expect(busy).toMatchObject({ _tag: "VcsAdvanceBranchGuardedError", reason: "active-work" });
+        expect(yield* git(["rev-parse", "HEAD"])).toBe(expectedHead);
+        admission.active = false;
+        yield* fs.writeFileString(`${cwd}/untracked`, "keep\n");
+        const index = yield* fs.readFile(`${cwd}/.git/index`);
+        const dirty = yield* workflow.advanceBranch(input).pipe(Effect.flip);
+        expect(dirty).toMatchObject({
+          _tag: "VcsAdvanceBranchGuardedError",
+          reason: "checkout-changed",
+        });
+        expect(yield* fs.readFile(`${cwd}/.git/index`)).toEqual(index);
+        expect(yield* git(["rev-parse", "HEAD"])).toBe(expectedHead);
+        yield* fs.remove(`${cwd}/untracked`);
+        const stale = yield* workflow
+          .advanceBranch({ ...input, expectedHead: "0".repeat(40) })
+          .pipe(Effect.flip);
+        expect(stale).toMatchObject({
+          _tag: "VcsAdvanceBranchGuardedError",
+          reason: "checkout-changed",
+        });
+        expect(yield* git(["rev-parse", "HEAD"])).toBe(expectedHead);
+        yield* workflow.advanceBranch(input);
+        expect(yield* git(["rev-parse", "HEAD"])).toBe(targetHead);
+        expect(yield* git(["rev-parse", "main"])).toBe(targetHead);
+        expect(yield* git(["write-tree"])).toBe(yield* git(["rev-parse", `${targetHead}^{tree}`]));
+        expect(yield* git(["status", "--porcelain=v1", "--untracked-files=all"])).toBe("");
+        expect(yield* fs.readFileString(`${cwd}/new`)).toBe("remote contents\n");
+        if (preparedMerge) {
+          expect(yield* git(["show", "-s", "--format=%P", targetHead])).toBe(
+            `${expectedHead} ${remoteHead}`,
+          );
+          expect(yield* fs.readFileString(`${cwd}/local`)).toBe("local contents\n");
+        }
+        expect(yield* fs.exists(`${cwd}/.git/MERGE_HEAD`)).toBe(false);
+        expect(admission.visits).toBe(4);
+        expect(admission.held).toBe(false);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          GitWorkflowService.layer.pipe(
+            Layer.provide(
+              Layer.mock(EventSink.EventSinkV2)({
+                withCheckoutAdmission: (cwd, effect) =>
+                  Effect.gen(function* () {
+                    admission.visits++;
+                    if (admission.active)
+                      return yield* new EventSink.CheckoutAdmissionError({
+                        cwd,
+                        reason: "active-work",
+                      });
+                    admission.held = true;
+                    return yield* effect.pipe(
+                      Effect.ensuring(
+                        Effect.sync(() => {
+                          admission.held = false;
+                        }),
+                      ),
+                    );
+                  }),
+              }),
+            ),
+            Layer.provide(
+              Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+                resolve: ({ cwd }) =>
+                  Effect.succeed({
+                    kind: "git",
+                    repository: { rootPath: cwd },
+                  } as VcsDriverRegistry.VcsDriverHandle),
+              }),
+            ),
+            Layer.provide(Layer.mock(GitManager.GitManager)({})),
+            Layer.provideMerge(GitVcsDriver.layer),
+            Layer.provideMerge(VcsProcess.layer),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), { prefix: "t3-advance-branch-" }).pipe(
+                Layer.provide(NodeServices.layer),
+              ),
+            ),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ),
+      );
+    },
+  );
+
   it.effect("reports a non-Git VCS repository as not a Git repository", () =>
     Effect.gen(function* () {
       const workflow = yield* GitWorkflowService.GitWorkflowService;
