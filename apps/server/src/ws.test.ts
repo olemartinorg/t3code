@@ -1,4 +1,3 @@
-import { emptyDraftPresenceLayer } from "./orchestration-v2/DraftPresence.test-fixtures.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -177,7 +176,7 @@ const ReplayTestLayer = OrchestrationEventStore.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
 );
 
-it.live.each(["thread", "shell", "shell-presence"] as const)(
+it.live.each(["thread", "shell"] as const)(
   "%s resume skips unknown types, synchronizes, and receives the live tail",
   (scope) =>
     Effect.gen(function* () {
@@ -248,7 +247,6 @@ it.live.each(["thread", "shell", "shell-presence"] as const)(
           : yield* subscribeOrchestrationV2Shell({
               afterSequence: before!.sequence,
               requestCompletionMarker: true,
-              includeDraftPresence: scope === "shell-presence",
             }).pipe(Effect.flatMap(consume));
       });
       const items = yield* subscription.pipe(
@@ -281,21 +279,13 @@ it.live.each(["thread", "shell", "shell-presence"] as const)(
         items.map((item) => item.kind),
         scope === "thread"
           ? ["event", "synchronized", "event"]
-          : [
-              ...(scope === "shell-presence" ? ["draft-presence.updated"] : []),
-              "project.updated",
-              "synchronized",
-              "project.updated",
-            ],
+          : ["project.updated", "synchronized", "project.updated"],
       );
       assert.deepEqual(
         items.flatMap((item) => (item.sequence === undefined ? [] : [item.sequence])),
         [after!.sequence, liveSequence],
       );
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(Layer.mergeAll(ReplayTestLayer, emptyDraftPresenceLayer)),
-    ),
+    }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 
 // Build the production RPC layer; unrelated capabilities fail if this test calls them.
@@ -476,7 +466,7 @@ it.effect(
             {},
             yield* PreviewAutomationBroker.PreviewAutomationBroker,
             yield* ServerBrowser.ServerBrowser,
-          ).pipe(Layer.provide(Layer.merge(configRpcServices, emptyDraftPresenceLayer))),
+          ).pipe(Layer.provide(configRpcServices)),
         ),
       );
       const requestId = RpcMessage.RequestId("config");

@@ -45,20 +45,6 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("creates released composer presence after the upstream nightly migrations", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 67 });
-      assert.deepStrictEqual(yield* runMigrations(), [[68, "ComposerDraftPresence"]]);
-      assert.deepStrictEqual(yield* history, migrationManifest);
-      assert.deepStrictEqual(yield* sql`SELECT * FROM composer_draft_presence_sources`, []);
-      assert.deepStrictEqual(yield* sql`SELECT * FROM composer_draft_presence_revision`, [
-        { singleton: 1, revision: 0 },
-      ]);
-      assert.deepStrictEqual(yield* runMigrations(), []);
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  );
-
   it.effect("refuses to start when a later id would skip V2 migrations", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

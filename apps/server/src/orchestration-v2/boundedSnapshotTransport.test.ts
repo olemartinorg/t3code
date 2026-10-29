@@ -1,4 +1,3 @@
-import { emptyDraftPresenceLayer } from "./DraftPresence.test-fixtures.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
   AuthOrchestrationReadScope,
@@ -225,7 +224,6 @@ const seed = Effect.gen(function* () {
 });
 
 const TestLayer = Layer.mergeAll(
-  emptyDraftPresenceLayer,
   management,
   Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
     getEnvironmentId: Effect.succeed(EnvironmentId.make("compact-transport")),
