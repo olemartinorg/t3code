@@ -9,6 +9,8 @@ import {
   GitCommandError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
+  type VcsAdvanceBranchGuardedInput,
+  VcsAdvanceBranchGuardedError,
   type VcsCreateRefInput,
   type VcsCreateRefResult,
   type VcsCreateWorktreeInput,
@@ -125,6 +127,9 @@ export class GitWorkflowService extends Context.Service<
     readonly switchRef: (
       input: VcsSwitchRefInput,
     ) => Effect.Effect<VcsSwitchRefResult, GitCommandError>;
+    readonly advanceBranch: (
+      input: VcsAdvanceBranchGuardedInput,
+    ) => Effect.Effect<void, GitCommandError | VcsAdvanceBranchGuardedError>;
     readonly renameBranch: (input: {
       readonly exactName?: boolean;
       readonly cwd: string;
@@ -506,6 +511,117 @@ export const make = Effect.gen(function* () {
                     }),
                   )
               : Effect.scoped(git.switchRef(input)),
+          ),
+        ),
+      ),
+    advanceBranch: (input) =>
+      ensureGitCommand("GitWorkflowService.advanceBranch", input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          withCheckoutLease(
+            handle.repository.rootPath,
+            eventSink
+              .withCheckoutAdmission(
+                handle.repository.rootPath,
+                Effect.gen(function* () {
+                  const configuration = [
+                    "core.hooksPath=/dev/null",
+                    "core.fsmonitor=false",
+                    "hook.reference-transaction.enabled=false",
+                    "merge.autoStash=false",
+                    "submodule.recurse=false",
+                    "gc.auto=0",
+                    "maintenance.auto=false",
+                  ];
+                  const command = (args: string[]) =>
+                    git.execute({
+                      operation: "GitWorkflowService.advanceBranch",
+                      cwd: input.cwd,
+                      args: [...configuration.flatMap((value) => ["-c", value]), ...args],
+                      timeoutMs: null,
+                      env: { GIT_OPTIONAL_LOCKS: "0" },
+                    });
+                  const read = (args: string[]) =>
+                    command(args).pipe(Effect.map((result) => result.stdout.trim()));
+                  const refuse = (reason: VcsAdvanceBranchGuardedError["reason"], detail: string) =>
+                    new VcsAdvanceBranchGuardedError({
+                      cwd: input.cwd,
+                      reason,
+                      detail,
+                    });
+                  if (
+                    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedHead) ||
+                    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.targetHead)
+                  )
+                    return yield* refuse(
+                      "invalid-target",
+                      "Pull requires exact commit identities.",
+                    );
+                  yield* read(["check-ref-format", `refs/heads/${input.refName}`]);
+                  const branch = yield* read(["symbolic-ref", "--quiet", "HEAD"]);
+                  const head = yield* read(["rev-parse", "HEAD"]);
+                  const status = yield* read(["status", "--porcelain=v1", "--untracked-files=all"]);
+                  const operationPaths = (yield* read([
+                    "rev-parse",
+                    ...[
+                      "index.lock",
+                      "MERGE_HEAD",
+                      "rebase-merge",
+                      "rebase-apply",
+                      "CHERRY_PICK_HEAD",
+                      "REVERT_HEAD",
+                      "sequencer",
+                      "BISECT_START",
+                    ].flatMap((name) => ["--git-path", name]),
+                  ])).split("\n");
+                  const pending = yield* Effect.forEach(operationPaths, (file) =>
+                    fs.exists(path.resolve(input.cwd, file)),
+                  ).pipe(
+                    Effect.mapError(() =>
+                      refuse("checkout-changed", "Git operation state could not be inspected."),
+                    ),
+                  );
+                  if (
+                    branch !== `refs/heads/${input.refName}` ||
+                    head !== input.expectedHead ||
+                    status ||
+                    pending.some(Boolean)
+                  )
+                    return yield* refuse(
+                      "checkout-changed",
+                      "Checkout changed, contains local edits, or has a Git operation in progress.",
+                    );
+                  const result = yield* command([
+                    "merge",
+                    "--ff-only",
+                    // branch.<name>.mergeOptions must not stage a squash or suppress the commit.
+                    "--no-squash",
+                    "--commit",
+                    "--no-edit",
+                    "--no-verify",
+                    "--no-stat",
+                    input.targetHead,
+                  ]);
+                  if (result.exitCode !== 0)
+                    return yield* new GitCommandError({
+                      operation: "GitWorkflowService.advanceBranch",
+                      command: "merge",
+                      cwd: input.cwd,
+                      detail: "Pull could not safely advance the local branch.",
+                    });
+                }),
+              )
+              .pipe(
+                Effect.provideService(FileSystem.FileSystem, fs),
+                Effect.provideService(Path.Path, path),
+                Effect.catchTags({
+                  CheckoutAdmissionError: (cause) =>
+                    new VcsAdvanceBranchGuardedError({
+                      cwd: input.cwd,
+                      reason: cause.reason,
+                      detail: cause.message,
+                    }),
+                }),
+              ),
           ),
         ),
       ),

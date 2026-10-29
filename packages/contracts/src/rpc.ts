@@ -122,6 +122,8 @@ import {
   VcsSwitchRefInput,
   VcsSwitchRefGuardedInput,
   VcsDeleteLocalBranchGuardedInput,
+  VcsAdvanceBranchGuardedInput,
+  VcsAdvanceBranchGuardedError,
   VcsSwitchRefResult,
   GitCommandError,
   VcsCreateRefInput,
@@ -436,6 +438,7 @@ export const WS_METHODS = {
   vcsSwitchRef: "vcs.switchRef",
   vcsSwitchRefGuarded: "vcs.switchRefGuarded",
   vcsDeleteLocalBranchGuarded: "vcs.deleteLocalBranchGuarded",
+  vcsAdvanceBranchGuarded: "vcs.advanceBranchGuarded",
   vcsInit: "vcs.init",
 
   gitRunStackedAction: "git.runStackedAction",
@@ -1443,6 +1446,15 @@ const WsVcsDeleteLocalBranchGuardedRpc = Rpc.make(WS_METHODS.vcsDeleteLocalBranc
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsAdvanceBranchGuardedRpc = Rpc.make(WS_METHODS.vcsAdvanceBranchGuarded, {
+  payload: VcsAdvanceBranchGuardedInput,
+  error: Schema.Union([
+    VcsAdvanceBranchGuardedError,
+    GitCommandError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   payload: VcsInitInput,
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
@@ -2051,6 +2063,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsSwitchRefGuardedRpc,
   WsVcsDeleteLocalBranchGuardedRpc,
+  WsVcsAdvanceBranchGuardedRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,

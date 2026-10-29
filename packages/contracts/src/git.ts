@@ -216,6 +216,33 @@ export const VcsDeleteLocalBranchGuardedInput = Schema.Struct({
   expectedHead: TrimmedNonEmptyStringSchema,
 });
 
+export const VcsAdvanceBranchGuardedInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  expectedHead: TrimmedNonEmptyStringSchema,
+  targetHead: TrimmedNonEmptyStringSchema,
+});
+export type VcsAdvanceBranchGuardedInput = typeof VcsAdvanceBranchGuardedInput.Type;
+
+/** An acknowledged guarded-advance refusal; diagnostics are not the control contract. */
+export class VcsAdvanceBranchGuardedError extends Schema.TaggedError<VcsAdvanceBranchGuardedError>()(
+  "VcsAdvanceBranchGuardedError",
+  {
+    cwd: Schema.String,
+    reason: Schema.Literals([
+      "active-work",
+      "unknown-ownership",
+      "checkout-changed",
+      "invalid-target",
+    ]),
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
 export const VcsInitInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   kind: Schema.optional(VcsDriverKind),
