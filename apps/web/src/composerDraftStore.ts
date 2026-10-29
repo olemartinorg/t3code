@@ -1,4 +1,3 @@
-import { hostIntegration } from "./hostIntegration";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
@@ -116,8 +115,7 @@ type ComposerPersistState =
   | PersistedComposerDraftStoreState;
 
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  hostIntegration()?.composer?.storage ??
-    (typeof localStorage !== "undefined" ? localStorage : createMemoryStorage()),
+  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
   (value) =>
     JSON.stringify({
       state:
@@ -137,10 +135,7 @@ const composerPersistStorage: PersistStorage<ComposerPersistState> = {
     }
     return JSON.parse(raw) as StorageValue<ComposerPersistState>;
   },
-  setItem: (name, value) => {
-    composerDebouncedStorage.setItem(name, value);
-    hostIntegration()?.composer?.dirty(() => composerDebouncedStorage.flush());
-  },
+  setItem: (name, value) => composerDebouncedStorage.setItem(name, value),
   removeItem: (name) => composerDebouncedStorage.removeItem(name),
 };
 
@@ -350,7 +345,6 @@ const PersistedComposerDraftStoreStorage = Schema.Struct({
   version: Schema.Number,
   state: PersistedComposerDraftStoreState,
 });
-const decodeSavedComposerDrafts = Schema.decodeUnknownSync(PersistedComposerDraftStoreStorage);
 
 export interface ComposerContextAddOptions {
   appendReference?: boolean;
@@ -382,21 +376,7 @@ export interface ComposerThreadDraftState {
 }
 
 export function composerDraftHasUserContent(
-  draft:
-    | ({ readonly prompt: string } & {
-        readonly [
-          K in
-            | "images"
-            | "files"
-            | "persistedAttachments"
-            | "terminalContexts"
-            | "previewAnnotations"
-            | "reviewComments"
-            | "threadContexts"
-        ]: readonly unknown[];
-      })
-    | null
-    | undefined,
+  draft: ComposerThreadDraftState | null | undefined,
 ): boolean {
   if (!draft) {
     return false;
@@ -4141,41 +4121,17 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
       merge: (persistedState, currentState) => {
         const normalizedPersisted =
           normalizeCurrentPersistedComposerDraftStoreState(persistedState);
-        const textOnly = hostIntegration()?.composer?.textOnlyHydration === true;
         const draftsByThreadKey = Object.fromEntries(
-          Object.entries(normalizedPersisted.draftsByThreadKey).map(([threadKey, draft]) => {
-            const local = currentState.draftsByThreadKey[threadKey];
-            if (textOnly && local) {
-              return [
-                threadKey,
-                local.prompt === draft.prompt ? local : { ...local, prompt: draft.prompt },
-              ];
-            }
-            return [threadKey, toHydratedThreadDraft(draft)];
-          }),
+          Object.entries(normalizedPersisted.draftsByThreadKey).map(([threadKey, draft]) => [
+            threadKey,
+            toHydratedThreadDraft(draft),
+          ]),
         );
         const draftThreadsByThreadKey = Object.fromEntries(
           Object.entries(normalizedPersisted.draftThreadsByThreadKey).map(
-            ([threadKey, draftThread]) => [
-              threadKey,
-              textOnly && currentState.draftThreadsByThreadKey[threadKey]
-                ? currentState.draftThreadsByThreadKey[threadKey]
-                : toHydratedDraftThreadState(draftThread),
-            ],
+            ([threadKey, draftThread]) => [threadKey, toHydratedDraftThreadState(draftThread)],
           ),
         ) as Record<string, DraftThreadState>;
-        if (textOnly) {
-          // Live files and images need not have serializable bytes. A remote
-          // text clear cannot discard content owned by this running client.
-          for (const [threadKey, local] of Object.entries(currentState.draftsByThreadKey)) {
-            if (draftsByThreadKey[threadKey]) continue;
-            const withoutText = { ...local, prompt: "" };
-            if (shouldRemoveDraft(withoutText)) continue;
-            draftsByThreadKey[threadKey] = withoutText;
-            const session = currentState.draftThreadsByThreadKey[threadKey];
-            if (session) draftThreadsByThreadKey[threadKey] = session;
-          }
-        }
         return {
           ...currentState,
           draftsByThreadKey,
@@ -4192,48 +4148,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
 );
 
 export const useComposerDraftStore = composerDraftStore;
-
-/** Retry the current local save before accepting it as a presence replacement. */
-export function flushComposerDrafts(): void {
-  composerPersistStorage.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
-    state: { capturedState: useComposerDraftStore.getState() },
-    version: COMPOSER_DRAFT_STORAGE_VERSION,
-  });
-  composerDebouncedStorage.flush();
-}
-
-/** Inspect this profile's committed document without changing any window's editor. */
-export function readSavedComposerDraftPresenceState() {
-  const raw = localStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
-  const saved =
-    raw === null
-      ? EMPTY_PERSISTED_DRAFT_STORE_STATE
-      : decodeSavedComposerDrafts(JSON.parse(raw)).state;
-  return {
-    draftsByThreadKey: Object.fromEntries(
-      Object.entries(saved.draftsByThreadKey).map(([key, draft]) => [
-        key,
-        {
-          prompt: draft.prompt,
-          images: [],
-          files: draft.files ?? [],
-          persistedAttachments: draft.attachments,
-          terminalContexts: draft.terminalContexts ?? [],
-          previewAnnotations: draft.previewAnnotations ?? [],
-          reviewComments: draft.reviewComments ?? [],
-          threadContexts: draft.threadContexts ?? [],
-        },
-      ]),
-    ),
-    draftThreadsByThreadKey: Object.fromEntries(
-      Object.entries(saved.draftThreadsByThreadKey).map(([key, draft]) => [
-        key,
-        toHydratedDraftThreadState(draft),
-      ]),
-    ),
-    backgroundSubmissionThreadKeys: useComposerDraftStore.getState().backgroundSubmissionThreadKeys,
-  };
-}
 
 export function subscribeComposerDraftModelReconciliation(input: {
   readonly registry: AtomRegistry.AtomRegistry;
@@ -4470,7 +4384,3 @@ export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): vo
   }
   clearBackgroundDraftSubmissionByRef(threadRef);
 }
-
-hostIntegration()?.composer?.changed(() => {
-  void useComposerDraftStore.persist.rehydrate();
-});

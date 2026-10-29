@@ -208,7 +208,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           : Option.match(next.snapshot, {
               onNone: () => null,
               onSome: (snapshot) =>
-                item.kind === "draft-presence.updated" || item.sequence > snapshot.snapshotSequence
+                item.sequence > snapshot.snapshotSequence
                   ? applyShellStreamEvent(snapshot, item)
                   : snapshot,
             });
@@ -372,10 +372,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
 
         if (!canResume || Option.isNone(current.snapshot)) {
-          return {
-            includeDraftPresence: true,
-            ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
-          };
+          return supportsCompletionMarker ? { requestCompletionMarker: true as const } : {};
         }
         if (!supportsCompletionMarker) {
           yield* SubscriptionRef.update(state, (value) => ({
@@ -386,7 +383,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
         return {
           afterSequence: current.snapshot.value.snapshotSequence,
-          includeDraftPresence: true,
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
       }),

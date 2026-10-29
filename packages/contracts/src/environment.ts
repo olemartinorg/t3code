@@ -74,8 +74,6 @@ export type ServerSelfUpdateCapability = typeof ServerSelfUpdateCapability.Type;
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Fork contract for native completion/question metadata and embedded client integration. */
   clientIntegrationVersion: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
-  /** Persistent desktop composer presence; absence means unsupported, not empty. */
-  composerDraftPresence: Schema.optionalKey(Schema.Literal(1)),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
   attachmentUploads: Schema.optionalKey(Schema.Boolean),

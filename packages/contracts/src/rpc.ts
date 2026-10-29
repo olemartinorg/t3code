@@ -22,7 +22,6 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
-import { ComposerDraftPresenceError } from "./draftPresence.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -1746,17 +1745,6 @@ const WsOrchestrationV2SubscribeArchivedShellRpc = Rpc.make(
   },
 );
 
-const WsOpenDraftPresenceSourceRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.openDraftPresenceSource, {
-  payload: OrchestrationV2RpcSchemas.openDraftPresenceSource.input,
-  success: OrchestrationV2RpcSchemas.openDraftPresenceSource.output,
-  error: Schema.Union([ComposerDraftPresenceError, EnvironmentAuthorizationError]),
-});
-const WsReplaceDraftPresenceRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.replaceDraftPresence, {
-  payload: OrchestrationV2RpcSchemas.replaceDraftPresence.input,
-  success: OrchestrationV2RpcSchemas.replaceDraftPresence.output,
-  error: Schema.Union([ComposerDraftPresenceError, EnvironmentAuthorizationError]),
-});
-
 const WsOrchestrationV2SubscribeShellRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.subscribeShell, {
   payload: OrchestrationV2RpcSchemas.subscribeShell.input,
   success: OrchestrationV2RpcSchemas.subscribeShell.output,
@@ -2118,8 +2106,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2LaunchThreadRpc,
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationV2SubscribeShellRpc,
-  WsOpenDraftPresenceSourceRpc,
-  WsReplaceDraftPresenceRpc,
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,
 ).middleware(RpcScopeAuthorization);

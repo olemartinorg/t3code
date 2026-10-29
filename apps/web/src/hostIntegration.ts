@@ -1,12 +1,6 @@
 import { useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { StateStorage } from "./lib/storage";
-import type {
-  ClientSettings,
-  ModelSelection,
-  ServerSettings,
-  ComposerDraftPresenceEntry,
-} from "@t3tools/contracts";
+import type { ClientSettings, ModelSelection, ServerSettings } from "@t3tools/contracts";
 
 /** Optional embedding services supplied before the native client is loaded. */
 export interface HostIntegration {
@@ -25,21 +19,6 @@ export interface HostIntegration {
   readonly updateNotice?: (environmentId: string) => ReactNode;
   readonly reportPanelPresence?: (present: boolean) => void;
   readonly visibility?: { get: () => boolean; subscribe: (listener: () => void) => () => void };
-  readonly composer?: {
-    storage: StateStorage;
-    changed: (rehydrate: () => void) => void;
-    dirty: (flush: () => void) => void;
-    /** Remote prompt updates retain locally owned runtime composer content. */
-    textOnlyHydration?: boolean;
-    /** Standalone integrations may retain native presence for content they do not own. */
-    nativePresence?: {
-      filter: (
-        environmentId: string,
-        entries: ComposerDraftPresenceEntry[],
-      ) => ComposerDraftPresenceEntry[];
-      subscribe: (listener: () => void) => () => void;
-    };
-  };
   readonly settings?: {
     read: () => Record<string, unknown>;
     write: (settings: ClientSettings) => Promise<void>;

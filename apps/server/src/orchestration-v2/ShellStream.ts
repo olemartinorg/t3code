@@ -1,5 +1,4 @@
 import type {
-  ComposerDraftPresence,
   ApplicationStoredEvent,
   OrchestrationProjectShell,
   OrchestrationV2ArchivedShellStreamItem,
@@ -55,7 +54,6 @@ export function buildActiveShellSnapshot(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly threads: OrchestrationV2ThreadShellSnapshot;
   readonly snapshotSequence: number;
-  readonly draftPresence?: ComposerDraftPresence;
 }): OrchestrationV2ShellSnapshot {
   return {
     schemaVersion: input.threads.schemaVersion,
@@ -63,7 +61,6 @@ export function buildActiveShellSnapshot(input: {
     projects: input.projects,
     threads: input.threads.threads,
     archivedThreads: [],
-    ...(input.draftPresence === undefined ? {} : { draftPresence: input.draftPresence }),
   };
 }
 
@@ -77,13 +74,11 @@ export const loadShellSnapshotParts = Effect.fn("ShellStream.loadShellSnapshotPa
   E2,
   E3,
   E4,
-  E5 = never,
 >(input: {
   readonly sql: SqlClient.SqlClient;
   readonly readThreads: Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E2>, E1>;
   readonly listProjects: Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, E3>;
   readonly latestSequence: Effect.Effect<number, E4>;
-  readonly draftPresence?: Effect.Effect<ComposerDraftPresence, E5>;
 }) {
   const read = yield* input.sql
     .withTransaction(
@@ -91,7 +86,6 @@ export const loadShellSnapshotParts = Effect.fn("ShellStream.loadShellSnapshotPa
         decodeThreads: input.readThreads,
         projects: input.listProjects,
         snapshotSequence: input.latestSequence,
-        draftPresence: input.draftPresence ?? Effect.succeed(undefined),
       }),
     )
     .pipe(NodeSqliteClient.readOnly);
@@ -99,7 +93,6 @@ export const loadShellSnapshotParts = Effect.fn("ShellStream.loadShellSnapshotPa
     projects: read.projects,
     threads: yield* read.decodeThreads,
     snapshotSequence: read.snapshotSequence,
-    ...(read.draftPresence === undefined ? {} : { draftPresence: read.draftPresence }),
   };
 });
 

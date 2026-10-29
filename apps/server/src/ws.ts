@@ -155,7 +155,6 @@ import {
   projectThreadProjectionForWire,
 } from "./orchestration-v2/WireProjection.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
-import * as DraftPresence from "./orchestration-v2/DraftPresence.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
@@ -958,7 +957,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   function* (input: {
     readonly afterSequence?: number;
     readonly requestCompletionMarker?: boolean;
-    readonly includeDraftPresence?: boolean;
   }) {
     const sql = yield* SqlClient.SqlClient;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
@@ -967,17 +965,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const projectService = yield* ProjectService.ProjectService;
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
 
-    const draftPresence = yield* DraftPresence.DraftPresence;
-    const draftChanges = yield* draftPresence.subscribeChanges;
-    const draftRefreshes =
-      input.includeDraftPresence === true
-        ? Stream.fromSubscription(draftChanges).pipe(
-            Stream.map((draftPresence) => ({
-              kind: "draft-presence.updated" as const,
-              draftPresence,
-            })),
-          )
-        : Stream.empty;
     const enrichmentChanges = yield* projectEnrichment.subscribeChanges;
     const loadProjectMetadataSnapshot = Effect.fn("ws.orchestrationV2.loadProjectMetadataSnapshot")(
       function* (snapshotSequence: number) {
@@ -1001,7 +988,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
           readThreads: threadManagement.readShellSnapshot({ location: "active" }),
           listProjects: projects.listShells(),
           latestSequence: applicationEvents.latestApplicationSequence,
-          draftPresence: draftPresence.snapshot,
         }),
       );
       const enriched = yield* enrichProjectShells(base.projects);
@@ -1142,7 +1128,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         return composeShellStreamWithEnrichment({
           initial: initialSnapshotItems(loaded),
           tail: completionThenLive(loaded.snapshot.snapshotSequence),
-          enrichment: Stream.merge(enrichmentRefreshes, draftRefreshes),
+          enrichment: enrichmentRefreshes,
         });
       }
 
@@ -1152,7 +1138,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         return composeShellStreamWithEnrichment({
           initial: initialSnapshotItems(loaded),
           tail: completionThenLive(loaded.snapshot.snapshotSequence),
-          enrichment: Stream.merge(enrichmentRefreshes, draftRefreshes),
+          enrichment: enrichmentRefreshes,
         });
       }
 
@@ -1168,21 +1154,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         }),
       );
       return composeShellStreamWithEnrichment({
-        initial: Stream.concat(
-          initialEnrichmentItems(loaded),
-          input.includeDraftPresence === true
-            ? Stream.fromEffect(
-                draftPresence.snapshot.pipe(
-                  Effect.map((draftPresence) => ({
-                    kind: "draft-presence.updated" as const,
-                    draftPresence,
-                  })),
-                ),
-              )
-            : Stream.empty,
-        ),
+        initial: initialEnrichmentItems(loaded),
         tail: Stream.concat(Stream.concat(replay, completionMarker), liveFrom(highWater)),
-        enrichment: Stream.merge(enrichmentRefreshes, draftRefreshes),
+        enrichment: enrichmentRefreshes,
       });
     }).pipe(
       Effect.mapError(
@@ -1218,7 +1192,6 @@ export const layerWsRpc = (
     .toLayer(
       Effect.gen(function* () {
         const currentSessionId = currentSession.sessionId;
-        const draftPresence = yield* DraftPresence.DraftPresence;
         const sql = yield* SqlClient.SqlClient;
         const threadManagement = yield* ThreadManagementService.ThreadManagementService;
         const intakeContext = yield* Effect.context<
@@ -2065,10 +2038,6 @@ export const layerWsRpc = (
             ),
           [ORCHESTRATION_V2_WS_METHODS.subscribeArchivedShell]: (_input) =>
             Stream.unwrap(subscribeOrchestrationV2ArchivedShell()),
-          [ORCHESTRATION_V2_WS_METHODS.openDraftPresenceSource]: (input) =>
-            draftPresence.openSource(input),
-          [ORCHESTRATION_V2_WS_METHODS.replaceDraftPresence]: (input) =>
-            draftPresence.replace(input),
           [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
             Stream.unwrap(subscribeOrchestrationV2Shell(input)),
           [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>
