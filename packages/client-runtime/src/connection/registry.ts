@@ -20,6 +20,7 @@ import {
   type ConnectionRegistration,
   type ConnectionRoute,
   type PlatformConnectionRegistration,
+  type PrimaryConnectionRegistration,
   SshConnectionProfile,
   connectionRegistrationCatalogEntry,
 } from "./catalog.ts";
@@ -115,6 +116,8 @@ export class EnvironmentRegistry extends Context.Service<
     readonly assertKnownAddress: (
       route: ConnectionRoute,
     ) => Effect.Effect<void, ConnectionBlockedError>;
+    /** Admit one leased platform connection without removing other environments or their data. */
+    readonly registerPlatform: (registration: PrimaryConnectionRegistration) => Effect.Effect<void>;
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
     ) => Effect.Effect<void>;
@@ -1163,6 +1166,7 @@ export const make = Effect.gen(function* () {
     start,
     register,
     assertKnownAddress,
+    registerPlatform: installPlatformRegistration,
     reconcilePlatform,
     remove,
     removeRoute,
