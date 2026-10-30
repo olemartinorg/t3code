@@ -1,4 +1,8 @@
 import {
+  ralphTerminalNotification,
+  suppressRalphTerminalNotification,
+} from "@t3tools/shared/agentAwareness";
+import {
   type EnvironmentThreadShell,
   type PendingSubagentRequest,
   presentThreadShell,
@@ -199,16 +203,22 @@ export function startThreadNotifications(
       const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
       let status = resolveSidebarThreadStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
+      const released = ralphTerminalNotification(rawThread);
+      if (released && ["ready", "failed", "limited"].includes(status))
+        status = released.recovery ? "failed" : "ready";
+      const terminalQuiet = suppressRalphTerminalNotification(rawThread);
       const attention =
         status === "input" ||
         status === "request" ||
         status === "approval" ||
-        status === "failed" ||
-        status === "limited"
+        (!terminalQuiet && (status === "failed" || status === "limited"))
           ? `${thread.latestRun?.runId ?? ""}:${status}`
           : null;
-      const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-      const settled = status === "ready" && thread.latestRun?.status === "completed";
+      const completedAt = released?.occurredAt ?? Date.parse(thread.latestRun?.completedAt ?? "");
+      const settled =
+        !terminalQuiet &&
+        status === "ready" &&
+        (released !== null || thread.latestRun?.status === "completed");
       const state = {
         raw: rawThread,
         subagentRequest,

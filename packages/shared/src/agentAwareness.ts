@@ -53,6 +53,8 @@ export interface ProjectThreadAwarenessV2Input {
     | "status"
     | "title"
     | "updatedAt"
+    | "latestRunId"
+    | "ralphNotification"
   >;
 }
 
@@ -61,10 +63,15 @@ export function projectThreadAwarenessV2(
 ): AgentAwarenessState | null {
   const { environmentId, project, thread } = input;
   if (thread.lineage.relationshipToParent === "subagent") return null;
-  const phase = resolveThreadAwarenessPhaseV2(thread);
+  let phase = resolveThreadAwarenessPhaseV2(thread);
+  const released = ralphTerminalNotification(thread);
+  if (released && (phase === "completed" || phase === "failed"))
+    phase = released.recovery ? "failed" : "completed";
   if (phase === null) {
     return null;
   }
+  if ((phase === "completed" || phase === "failed") && suppressRalphTerminalNotification(thread))
+    return null;
   if (phase === "completed" && thread.latestRunStopRequested === true) return null;
   // Resolve the phase first so live or waiting work stays visible after settlement.
   if (
@@ -89,7 +96,10 @@ export function projectThreadAwarenessV2(
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),
     modelTitle: thread.modelSelection.model,
-    updatedAt: DateTime.formatIso(thread.updatedAt),
+    updatedAt:
+      (phase === "completed" || phase === "failed") && released !== null
+        ? DateTime.formatIso(DateTime.makeUnsafe(released.occurredAt))
+        : DateTime.formatIso(thread.updatedAt),
     deepLink: buildAgentAwarenessDeepLink({ environmentId, threadId: thread.id }),
   };
 }
@@ -151,4 +161,16 @@ function headlineForPhase(phase: AgentAwarenessPhase): string {
     case "stale":
       return "Update delayed";
   }
+}
+
+/** Pending is undecided, consumed is permanently quiet; neither is an observed alert. */
+export function ralphTerminalNotification(
+  thread: Pick<OrchestrationV2ThreadShell, "ralphNotification">,
+) {
+  return thread.ralphNotification?.kind === "released" ? thread.ralphNotification : null;
+}
+export function suppressRalphTerminalNotification(
+  thread: Pick<OrchestrationV2ThreadShell, "ralphNotification">,
+): boolean {
+  return thread.ralphNotification?.kind === "quiet";
 }
