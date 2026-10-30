@@ -85,3 +85,5 @@ export { SettingsNavigationRouteScreen } from "../features/settings/SettingsNavi
 
 export { newTaskFlowKey, pruneNewTaskFlowStates } from "../features/threads/new-task-flow-state";
 export { isDraftThreadRoute } from "../features/threads/thread-route-state";
+
+export { workspaceDetailRouter } from "../features/workspace/workspace-detail-selection";
