@@ -373,6 +373,15 @@ describe("resolveAutoSettlementAt", () => {
         pullRequest: { state: "closed", closedAt: DateTime.formatIso(at(-1)) },
         autoSettleOnMerge: false,
       }),
+    ).toBeNull();
+    expect(
+      ThreadSettlementService.resolveAutoSettlementAt({
+        ...input,
+        thread: shell(),
+        pullRequest: { state: "closed", closedAt: DateTime.formatIso(at(-1)) },
+        autoSettleOnMerge: false,
+        autoSettleAfterDays: 1,
+      }),
     ).toEqual(shell().createdAt);
   });
 
