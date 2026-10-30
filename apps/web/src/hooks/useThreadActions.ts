@@ -201,12 +201,22 @@ function useMarkThreadUnread() {
     reportFailure: false,
   });
   const markThreadUnreadLocal = useUiStateStore((state) => state.markThreadUnread);
-  return (target: ScopedThreadRef) => {
+  return async (target: ScopedThreadRef) => {
     if (readEnvironmentServerConfigLoaded(target.environmentId)) {
-      void markThreadUnreadMutation({
+      const result = await markThreadUnreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
       });
+      if (result._tag === "Failure" && !Cause.hasInterruptsOnly(result.cause)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to mark thread unread",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
       return;
     }
     const thread = readThreadShell(target);
