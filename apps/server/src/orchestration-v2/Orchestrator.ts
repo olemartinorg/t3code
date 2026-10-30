@@ -36,6 +36,9 @@ import {
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
   type OrchestrationV2AppThread,
+  type OrchestrationV2RalphReceipt,
+  type OrchestrationV2RalphSnapshot,
+  type OrchestrationV2RalphCommandLookup,
   type OrchestrationV2ContextHandoff,
   type OrchestrationV2ContextSourcePoint,
   type OrchestrationV2ContextTransfer,
@@ -90,6 +93,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import { sameRalphBinding } from "./RalphOutcomes.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import {
   isCheckpointRestoreIsolated,
@@ -316,6 +320,14 @@ export interface OrchestratorV2DispatchResult {
 }
 
 export interface OrchestratorV2Shape {
+  readonly idleStop: EventSinkV2["Service"]["idleStop"];
+  readonly getRalphSnapshot: (
+    ownerId: string,
+  ) => Effect.Effect<OrchestrationV2RalphSnapshot, OrchestratorV2Error>;
+  readonly getRalphCommandReceipt: (
+    ownerId: string,
+    commandId: CommandId,
+  ) => Effect.Effect<OrchestrationV2RalphCommandLookup, OrchestratorV2Error>;
   readonly resumeQueuedRuns: Effect.Effect<number, OrchestratorV2Error>;
   readonly recoverDelegatedTasks: Effect.Effect<void>;
   readonly recoverDelegatedTask: (threadId: ThreadId, sourceRunId: RunId) => Effect.Effect<void>;
@@ -480,6 +492,7 @@ export function threadHasUnfinishedWork(records: {
 
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
   switch (command.type) {
+    case "ralph.control":
     case "thread.create":
     case "thread.archive":
     case "thread.unarchive":
@@ -1483,8 +1496,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         readonly failedRunId?: RunId;
         readonly endedRunId?: RunId;
         readonly queuedRunId?: RunId;
+        readonly manual?: boolean;
+        readonly ralph?: {
+          readonly command: Extract<OrchestrationV2Command, { type: "ralph.control" }>;
+          readonly events: Ref.Ref<Array<OrchestrationV2DomainEvent>>;
+          readonly effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>;
+        };
       },
     ) {
+      const writeEvents =
+        options?.ralph === undefined
+          ? writeSystemEvents
+          : (
+              additions: ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">>,
+              additionsEffects: ReadonlyArray<PendingOrchestrationEffectV2> = [],
+            ) =>
+              Effect.gen(function* () {
+                const owner = options.ralph!;
+                for (const event of additions) yield* emit(owner.events, owner.command)(event);
+                yield* Ref.update(owner.effects, (existing) => [...existing, ...additionsEffects]);
+              });
       if (!(yield* projectionStore.canStartQueuedRun(threadId))) return;
       const projection = yield* readCommandProjection(threadId);
       if (
@@ -1514,9 +1545,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: modelSelection.instanceId,
       };
       // A limited provider would fail and consume every waiting message.
-      if (usageLimitHoldsQueue(projection, queuedRun.providerInstanceId)) {
+      if (
+        options?.ralph === undefined &&
+        usageLimitHoldsQueue(projection, queuedRun.providerInstanceId)
+      ) {
         return;
       }
+      const ended = latestExecutedRun(projection.runs);
+      const recovery = ended?.ralphOutcome;
+      if (
+        options?.ralph === undefined &&
+        !options?.manual &&
+        projection.thread.ralphBinding != null &&
+        recovery != null &&
+        ended?.ralphAdmission != null &&
+        recovery.admissionCommandId === ended.ralphAdmission.commandId &&
+        sameRalphBinding(ended.ralphAdmission.binding, projection.thread.ralphBinding) &&
+        sameRalphBinding(recovery.binding, projection.thread.ralphBinding) &&
+        !(ended.ralphAdmission.origin === "ralph" && recovery.finalResponse === "ralph-complete") &&
+        (recovery.recovery ||
+          recovery.finalResponse === "empty" ||
+          recovery.workDurationMs < 5 * 60_000)
+      )
+        return;
       // Failed worktree creation would run queued work in the project checkout; wait for the user.
       const failedRun = latestExecutedRun(projection.runs);
       const failureClass =
@@ -1550,7 +1601,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           failedRun?.providerInstanceId === queuedRun.providerInstanceId)
       ) {
         const now = yield* DateTime.now;
-        yield* writeSystemEvents(
+        yield* writeEvents(
           projection.runs
             .filter((run) => run.status === "queued")
             .map((run) => ({
@@ -1576,7 +1627,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           turnItemRunIds: newerRunIds,
         })).turnItems.length > 0;
       const ordinal = startedAhead ? nextRunOrdinal(projection) : queuedRun.ordinal;
-      const commandId = CommandId.make(`command:system:start-queued:${queuedRun.id}`);
+      const commandId =
+        options?.ralph?.command.commandId ??
+        CommandId.make(`command:system:start-queued:${queuedRun.id}`);
       const rootNodeId = queuedRun.rootNodeId;
       const attemptId = queuedRun.activeAttemptId;
       const providerThreadId = queuedRun.providerThreadId;
@@ -1901,6 +1954,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       };
       const startingRun: OrchestrationV2Run = {
         ...queuedRun,
+        ...(options?.ralph === undefined
+          ? {}
+          : {
+              ralphAdmission: {
+                binding: options.ralph.command.binding,
+                commandId: options.ralph.command.commandId,
+                origin: "human" as const,
+              },
+            }),
         providerThreadId: queuedProviderThread.id,
         ordinal,
         status: "starting",
@@ -2039,7 +2101,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           session.status !== "stopped" &&
           session.status !== "error",
       );
-      yield* writeSystemEvents(
+      yield* writeEvents(
         [
           ...(selectionChanged
             ? [
@@ -2191,7 +2253,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
     (effect, threadId, options?) =>
       effect.pipe(
-        Effect.catch((cause) => failQueuedRunStart(threadId, cause, options?.queuedRunId)),
+        Effect.catch((cause) =>
+          options?.ralph === undefined
+            ? failQueuedRunStart(threadId, cause, options?.queuedRunId)
+            : Effect.fail(cause),
+        ),
       ),
   );
 
@@ -5087,6 +5153,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const recovery = projection.thread.limitRecovery;
       const now = yield* DateTime.now;
       if (
+        projection.thread.ralphBinding != null ||
         run?.id !== command.usageLimitContinuationOfRunId ||
         failure?.class !== "usage_limit" ||
         threadShellFromProjection(projection).lastErrorClass !== "usage_limit" ||
@@ -12439,6 +12506,174 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return parentRun.id;
   });
 
+  const dispatchRalphControl = Effect.fn("Orchestrator.dispatchRalphControl")(function* (
+    command: Extract<OrchestrationV2Command, { type: "ralph.control" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* readCommandProjection(command.threadId);
+    const thread = projection.thread;
+    const now = yield* DateTime.now;
+    let binding = thread.ralphBinding ?? null;
+    let retiredBinding = thread.ralphRetiredBinding;
+    let result: OrchestrationV2RalphReceipt = { kind: "deferred" };
+    const action = command.action;
+    const validIdentity = thread.projectId === command.projectId;
+    const ordinary = thread.lineage.relationshipToParent !== "subagent";
+    const active =
+      thread.archivedAt === null &&
+      thread.deletedAt === null &&
+      thread.settledOverride !== "settled" &&
+      (thread.snoozedUntil == null ||
+        DateTime.toEpochMillis(thread.snoozedUntil) <= DateTime.toEpochMillis(now));
+    const emitRun = (run: OrchestrationV2Run) =>
+      emit(
+        events,
+        command,
+      )({
+        type: "run.updated",
+        threadId: command.threadId,
+        runId: run.id,
+        occurredAt: now,
+        payload: run,
+      });
+    if (!validIdentity || !ordinary) result = { kind: "rejected", reason: "identity-changed" };
+    else if (action.kind === "retire") {
+      retiredBinding = command.binding;
+      if (sameRalphBinding(binding, command.binding)) binding = null;
+      const pending = yield* projectionStore
+        .getRalphPendingRuns(command.threadId)
+        .pipe(mapDispatchError(command));
+      const decisions = new Map(
+        action.decisions.map((decision) => [decision.eventId, decision.disposition]),
+      );
+      for (const run of pending)
+        if (sameRalphBinding(run.ralphOutcome?.binding, command.binding))
+          yield* emitRun({
+            ...run,
+            ralphOutcome: {
+              ...run.ralphOutcome!,
+              disposition: decisions.get(run.ralphOutcome!.eventId) ?? "consumed",
+            },
+          });
+      result = { kind: "retired" };
+    } else if (action.kind === "resolve") {
+      const run = yield* projectionStore
+        .getRalphOutcomeRun(command.threadId, action.eventId)
+        .pipe(mapDispatchError(command));
+      if (
+        run?.ralphOutcome === undefined ||
+        !sameRalphBinding(run.ralphOutcome.binding, command.binding)
+      )
+        result = { kind: "rejected", reason: "identity-changed" };
+      else {
+        const disposition =
+          run.ralphOutcome.disposition === "pending"
+            ? action.disposition
+            : run.ralphOutcome.disposition;
+        yield* emitRun({ ...run, ralphOutcome: { ...run.ralphOutcome, disposition } });
+        result = { kind: "resolved", eventId: action.eventId, disposition };
+      }
+    } else if (action.kind === "arm") {
+      const retired = yield* projectionStore
+        .isRalphRetired(command.threadId, command.binding)
+        .pipe(mapDispatchError(command));
+      if (!active || retired || (binding !== null && !sameRalphBinding(binding, command.binding)))
+        result = { kind: "rejected", reason: "identity-changed" };
+      else {
+        binding = command.binding;
+        result = { kind: "armed" };
+      }
+    } else if (!active || !sameRalphBinding(binding, command.binding))
+      result = { kind: "rejected", reason: "identity-changed" };
+    else {
+      const blocked = yield* projectionStore
+        .isRalphWorkBlocked(command.threadId)
+        .pipe(mapDispatchError(command));
+      if (!blocked) {
+        const queue = queuedRunsInDeliveryOrder(projection);
+        if (queue.length > 0) {
+          const first = queue[0]!;
+          const message = projection.messages.find(
+            (candidate) => candidate.id === first.userMessageId,
+          );
+          // Held queues remain held; native order/model/attribution stay authoritative.
+          if (
+            action.recovery &&
+            first.queueHeld !== true &&
+            message?.createdBy === "user" &&
+            message.notification === undefined &&
+            message.delegatedCompletion === undefined &&
+            message.scheduledTaskId === undefined
+          ) {
+            yield* startNextQueuedRun(command.threadId, {
+              queuedRunId: first.id,
+              ralph: { command, events, effects },
+            });
+            const admitted = (yield* Ref.get(events)).some(
+              (event) =>
+                event.type === "run.updated" &&
+                event.payload.id === first.id &&
+                event.payload.status === "starting",
+            );
+            if (admitted) result = { kind: "admitted", runId: first.id, origin: "human" };
+          }
+        } else {
+          yield* dispatchMessage(
+            {
+              type: "message.dispatch",
+              commandId: command.commandId,
+              threadId: command.threadId,
+              messageId: MessageId.make(`ralph:${command.commandId}`),
+              text: action.text,
+              attachments: [],
+              dispatchMode: { type: "start_immediately" },
+              createdBy: "user",
+              creationSource: "server",
+            },
+            events,
+            effects,
+          );
+          let runId: RunId | undefined;
+          yield* Ref.update(events, (pending) =>
+            pending.map((event) => {
+              if (event.type !== "run.created") return event;
+              runId = event.payload.id;
+              return {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  ralphAdmission: {
+                    binding: command.binding,
+                    commandId: command.commandId,
+                    origin: "ralph" as const,
+                  },
+                },
+              };
+            }),
+          );
+          if (runId !== undefined) result = { kind: "admitted", runId, origin: "ralph" };
+        }
+      }
+    }
+    // Use the planner's current metadata after provider selection, never regress it.
+    const updated = (yield* getProjectionWithPendingEvents(command.threadId, events)).thread;
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "thread.metadata-updated",
+      threadId: command.threadId,
+      occurredAt: now,
+      payload: {
+        ...updated,
+        ralphBinding: binding,
+        ...(retiredBinding === undefined ? {} : { ralphRetiredBinding: retiredBinding }),
+        ralphLastReceipt: { commandId: command.commandId, binding: command.binding, result },
+      },
+    });
+  });
+
   const dispatchUnsupported = (command: OrchestrationV2ServerCommand) =>
     Effect.fail(
       new OrchestratorDispatchError({
@@ -12477,6 +12712,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       | undefined;
     let updateDelegatedCompletionOnlyRunId: RunId | undefined;
     switch (command.type) {
+      case "ralph.control":
+        yield* dispatchRalphControl(command, events, effects).pipe(mapDispatchError(command));
+        break;
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
         break;
@@ -12814,6 +13052,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       default:
         return yield* dispatchUnsupported(command);
     }
+    if (
+      command.type === "thread.stop" ||
+      command.type === "thread.archive" ||
+      command.type === "thread.settle" ||
+      command.type === "thread.snooze" ||
+      (command.type === "run.interrupt" && command.holdQueue === true)
+    ) {
+      const updated = (yield* getProjectionWithPendingEvents(commandThreadId(command), events))
+        .thread;
+      if (updated.ralphBinding != null)
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.metadata-updated",
+          threadId: updated.id,
+          occurredAt: yield* DateTime.now,
+          payload: { ...updated, ralphRetiredBinding: updated.ralphBinding, ralphBinding: null },
+        });
+    }
     return {
       events: yield* Ref.get(events),
       effects: yield* Ref.get(effects),
@@ -12877,10 +13135,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       if (command.type === "queue.resume" || command.type === "queued-run.start") {
         yield* mapDispatchError(command)(
-          startNextQueuedRun(
-            command.threadId,
-            command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
-          ),
+          startNextQueuedRun(command.threadId, {
+            manual: true,
+            ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+          }),
         );
       }
       return {
@@ -13022,10 +13280,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     if (command.type === "queue.resume" || command.type === "queued-run.start") {
       yield* mapDispatchError(command)(
-        startNextQueuedRun(
-          command.threadId,
-          command.type === "queued-run.start" ? { queuedRunId: command.runId } : undefined,
-        ),
+        startNextQueuedRun(command.threadId, {
+          manual: true,
+          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+        }),
       );
     }
     if (command.type === "notification.delivery.accept") {
@@ -13431,6 +13689,32 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
       },
     ),
+    idleStop: eventSink.idleStop,
+    getRalphSnapshot: Effect.fn("OrchestratorV2.getRalphSnapshot")(function (ownerId) {
+      return projectionStore.getRalphSnapshot(ownerId).pipe(Effect.mapError(shellProjectionError));
+    }),
+    getRalphCommandReceipt: Effect.fn("OrchestratorV2.getRalphCommandReceipt")(function* (
+      ownerId,
+      commandId,
+    ) {
+      const receipt = yield* commandReceipts.getByCommandId(commandId);
+      if (Option.isNone(receipt)) return { kind: "absent" as const };
+      const events = yield* eventSink.readByCommandId({ commandId }).pipe(Stream.runCollect);
+      const event = events.findLast(
+        (stored) =>
+          stored.event.type === "thread.metadata-updated" &&
+          stored.event.payload.ralphLastReceipt?.commandId === commandId,
+      )?.event;
+      if (
+        event?.type !== "thread.metadata-updated" ||
+        event.payload.ralphLastReceipt?.binding.ownerId !== ownerId
+      )
+        return {
+          kind: "receipt" as const,
+          receipt: { kind: "rejected" as const, reason: "access-denied" as const },
+        };
+      return { kind: "receipt" as const, receipt: event.payload.ralphLastReceipt.result };
+    }, Effect.mapError(shellProjectionError)),
     getShellSnapshot: Effect.fn("OrchestratorV2.getShellSnapshot")(function (options) {
       return projectionStore.getShellSnapshot(options).pipe(Effect.mapError(shellProjectionError));
     }),

@@ -1,6 +1,9 @@
 import {
   CommandId,
+  EventId,
   type OrchestrationV2Run,
+  type OrchestrationV2IdleStopInput,
+  type OrchestrationV2IdleStopResult,
   OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderThread,
   OrchestrationV2StoredEvent,
@@ -24,6 +27,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
+
+import { queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import { recordRalphOutcome, sameRalphBinding } from "./RalphOutcomes.ts";
 
 import { replayAndBufferProjectedLiveEvents } from "./LiveStreamBudget.ts";
 import type { UnsequencedProjectEvent } from "../persistence/OrchestrationEventStore.ts";
@@ -90,6 +96,9 @@ export class CheckoutAdmissionError extends Schema.TaggedError<CheckoutAdmission
 const isCheckoutAdmissionError = Schema.is(CheckoutAdmissionError);
 
 export interface EventSinkV2Shape {
+  readonly idleStop: (
+    input: OrchestrationV2IdleStopInput,
+  ) => Effect.Effect<OrchestrationV2IdleStopResult, EventSinkV2Error>;
   /** Excludes native work commits until Git finishes, after checking committed ownership. */
   readonly withCheckoutAdmission: <A, E, R>(
     cwd: string,
@@ -289,6 +298,11 @@ const layerBase: Layer.Layer<
     // Serialize checkout against the transaction that admits that work, rather
     // than a pre-dispatch idle read. Other commits wait only for this short Git operation.
     const executionAdmission = yield* Semaphore.make(1);
+    // A new native owner lifetime is an actual process replacement, never a time lease.
+    const bootRows = yield* sql<{
+      readonly boot_id: string;
+    }>`SELECT lower(hex(randomblob(16))) AS boot_id`.pipe(Effect.orDie);
+    const nativeBootId = bootRows[0]!.boot_id;
     const inspectCheckout = Effect.fn("EventSink.inspectCheckout")(function (cwd: string) {
       return Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -427,7 +441,145 @@ const layerBase: Layer.Layer<
         });
       });
 
-    const normalizeEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) => {
+    const normalizeEvents = Effect.fn("EventSink.normalizeEvents")(function* (
+      events: ReadonlyArray<OrchestrationV2DomainEvent>,
+    ) {
+      // Capture outcomes before appending the event. The receipt, outcome, projection and
+      // outbox therefore survive the same crash boundary, including publication loss.
+      const normalizedEvents: OrchestrationV2DomainEvent[] = [];
+      for (const event of events) {
+        if (event.type !== "run.updated") {
+          normalizedEvents.push(event);
+          continue;
+        }
+        const current = yield* projectionStore.getThreadRecords(event.threadId, ["runs"], {
+          runIds: [event.payload.id],
+        });
+        const stored = current.runs[0];
+        let run = {
+          ...event.payload,
+          ...(event.payload.ralphAdmission === undefined && stored?.ralphAdmission !== undefined
+            ? { ralphAdmission: stored.ralphAdmission }
+            : {}),
+          // Settled dispositions cannot be undone by a stale runtime or late resolution.
+          ...(stored?.ralphOutcome !== undefined &&
+          (event.payload.ralphOutcome === undefined ||
+            stored.ralphOutcome.disposition !== "pending")
+            ? { ralphOutcome: stored.ralphOutcome }
+            : {}),
+        };
+        if (
+          run.ralphOutcome === undefined &&
+          current.thread.ralphBinding != null &&
+          run.completedAt !== null
+        ) {
+          const records = yield* projectionStore.getThreadRecords(
+            event.threadId,
+            ["messages", "nodes", "turnItems"],
+            { runIds: [run.id], messageRoles: ["assistant"], turnItemTypes: ["assistant_message"] },
+          );
+          const messages = new Map(records.messages.map((message) => [message.id, message]));
+          const nodes = new Map(records.nodes.map((node) => [node.id, node]));
+          const turnItems = new Map(records.turnItems.map((item) => [item.id, item]));
+          for (const pending of events) {
+            if (pending.threadId !== event.threadId) continue;
+            if (pending.type === "message.updated" && pending.payload.runId === run.id)
+              messages.set(pending.payload.id, pending.payload);
+            if (pending.type === "node.updated" && pending.payload.runId === run.id)
+              nodes.set(pending.payload.id, pending.payload);
+            if (pending.type === "turn-item.updated" && pending.payload.runId === run.id)
+              turnItems.set(pending.payload.id, pending.payload);
+          }
+          const ralphOutcome = recordRalphOutcome({
+            run,
+            eventId: event.id,
+            binding: current.thread.ralphBinding,
+            messages: [...messages.values()],
+            nodes: [...nodes.values()],
+            turnItems: [...turnItems.values()],
+          });
+          if (ralphOutcome !== undefined) run = { ...run, ralphOutcome };
+        }
+        normalizedEvents.push({ ...event, payload: run });
+      }
+      // Retirement is settled under executionAdmission, after any terminal commit
+      // that raced the command planner, before clearing the durable native binding.
+      for (const event of events) {
+        if (
+          event.type !== "thread.metadata-updated" ||
+          event.payload.ralphRetiredBinding === undefined ||
+          event.payload.ralphLastReceipt?.result.kind !== "retired" ||
+          !sameRalphBinding(
+            event.payload.ralphLastReceipt.binding,
+            event.payload.ralphRetiredBinding,
+          )
+        )
+          continue;
+        const retiredBinding = event.payload.ralphRetiredBinding;
+        const pending = new Map(
+          (yield* projectionStore.getRalphPendingRuns(event.threadId)).map((run) => [run.id, run]),
+        );
+        for (const candidate of normalizedEvents) {
+          if (
+            candidate.threadId === event.threadId &&
+            candidate.type === "run.updated" &&
+            candidate.payload.ralphOutcome?.disposition === "pending"
+          )
+            pending.set(candidate.payload.id, candidate.payload);
+        }
+        for (const run of pending.values()) {
+          if (!sameRalphBinding(run.ralphOutcome?.binding, retiredBinding)) continue;
+          const planned = normalizedEvents.find(
+            (candidate) =>
+              candidate.type === "run.updated" &&
+              candidate.payload.id === run.id &&
+              candidate.payload.ralphOutcome !== undefined &&
+              candidate.payload.ralphOutcome.disposition !== "pending",
+          );
+          if (planned !== undefined) continue;
+          normalizedEvents.push({
+            type: "run.updated",
+            id: EventId.make(`${event.id}:settle:${run.id}`),
+            threadId: event.threadId,
+            runId: run.id,
+            occurredAt: event.occurredAt,
+            payload: { ...run, ralphOutcome: { ...run.ralphOutcome!, disposition: "consumed" } },
+          });
+        }
+      }
+      // A late resolve acknowledges the already-settled outcome, never its stale request.
+      for (let i = 0; i < normalizedEvents.length; i++) {
+        const event = normalizedEvents[i]!;
+        if (
+          event.type !== "thread.metadata-updated" ||
+          event.payload.ralphLastReceipt?.result.kind !== "resolved"
+        )
+          continue;
+        const receipt = event.payload.ralphLastReceipt;
+        const result = receipt.result;
+        if (result.kind !== "resolved") continue;
+        const changed = normalizedEvents.find(
+          (candidate) =>
+            candidate.type === "run.updated" &&
+            candidate.payload.ralphOutcome?.eventId === result.eventId,
+        );
+        if (
+          changed?.type === "run.updated" &&
+          changed.payload.ralphOutcome?.disposition !== "pending" &&
+          changed.payload.ralphOutcome !== undefined
+        )
+          normalizedEvents[i] = {
+            ...event,
+            payload: {
+              ...event.payload,
+              ralphLastReceipt: {
+                ...receipt,
+                result: { ...result, disposition: changed.payload.ralphOutcome.disposition },
+              },
+            },
+          };
+      }
+      events = normalizedEvents;
       const runOrdinals = new Map(
         events.flatMap((event) =>
           event.type === "run.created" || event.type === "run.updated"
@@ -435,7 +587,7 @@ const layerBase: Layer.Layer<
             : [],
         ),
       );
-      return Effect.forEach(
+      return yield* Effect.forEach(
         events,
         (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> =>
           event.type === "turn-item.updated"
@@ -448,7 +600,7 @@ const layerBase: Layer.Layer<
             : Effect.succeed(event),
         { concurrency: 1 },
       );
-    };
+    });
 
     const applyStoredEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
@@ -735,6 +887,90 @@ const layerBase: Layer.Layer<
     ) {
       const result = yield* commitThenPublish(
         Effect.gen(function* () {
+          if (input.commandType === "ralph.control") {
+            const planned = input.events.findLast(
+              (event) =>
+                event.type === "thread.metadata-updated" &&
+                event.payload.ralphLastReceipt?.commandId === input.commandId,
+            );
+            if (
+              planned?.type === "thread.metadata-updated" &&
+              planned.payload.ralphLastReceipt?.result.kind === "armed"
+            ) {
+              const reservedStop =
+                yield* sql`SELECT 1 FROM orchestration_v2_idle_stop_admission LIMIT 1`;
+              if (reservedStop.length > 0) {
+                const current = yield* projectionStore.getThread(input.threadId);
+                input = {
+                  ...input,
+                  effects: [],
+                  events: [
+                    {
+                      ...planned,
+                      payload: {
+                        ...current,
+                        ralphLastReceipt: {
+                          commandId: input.commandId,
+                          binding: planned.payload.ralphLastReceipt.binding,
+                          result: { kind: "rejected", reason: "stopping" },
+                        },
+                      },
+                    },
+                  ],
+                };
+              }
+            }
+            if (
+              planned?.type === "thread.metadata-updated" &&
+              planned.payload.ralphLastReceipt?.result.kind === "admitted"
+            ) {
+              const result = planned.payload.ralphLastReceipt.result;
+              const current = yield* projectionStore.getThread(input.threadId);
+              const binding = planned.payload.ralphBinding;
+              const changed =
+                !sameRalphBinding(current.ralphBinding, binding) ||
+                current.projectId !== planned.payload.projectId ||
+                current.archivedAt !== null ||
+                current.deletedAt !== null ||
+                current.settledOverride === "settled" ||
+                (current.snoozedUntil != null &&
+                  DateTime.toEpochMillis(current.snoozedUntil) >
+                    DateTime.toEpochMillis(input.acceptedAt));
+              const queued = queuedRunsInDeliveryOrder(
+                yield* projectionStore.getThreadRecords(input.threadId, ["runs", "messages"], {
+                  messageRoles: ["user"],
+                }),
+              );
+              const queueChanged =
+                result.origin === "ralph"
+                  ? queued.length > 0
+                  : queued[0]?.id !== result.runId || queued[0]?.queueHeld === true;
+              if (
+                changed ||
+                queueChanged ||
+                (yield* projectionStore.isRalphWorkBlocked(input.threadId))
+              )
+                input = {
+                  ...input,
+                  effects: [],
+                  events: [
+                    {
+                      ...planned,
+                      payload: {
+                        ...current,
+                        ralphLastReceipt: {
+                          commandId: input.commandId,
+                          binding: planned.payload.ralphLastReceipt.binding,
+                          result: changed
+                            ? { kind: "rejected", reason: "identity-changed" }
+                            : { kind: "deferred" },
+                        },
+                      },
+                    },
+                  ],
+                };
+            }
+          }
           const reserved = yield* commandReceipts.insertIfAbsent({
             commandId: input.commandId,
             threadId: input.threadId,
@@ -975,7 +1211,75 @@ const layerBase: Layer.Layer<
       );
     };
 
+    const idleStop: EventSinkV2Shape["idleStop"] = (input) =>
+      executionAdmission
+        .withPermit(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              const answer = (result: OrchestrationV2IdleStopResult["result"]) => ({
+                bootId: nativeBootId,
+                result,
+              });
+              const rows = yield* sql<{
+                readonly owner_id: string;
+                readonly runtime_id: string;
+                readonly boot_id: string;
+                readonly reservation_id: string;
+              }>`SELECT owner_id, runtime_id, boot_id, reservation_id FROM orchestration_v2_idle_stop_admission WHERE singleton = 1`;
+              const current = rows[0];
+              if (input.action === "inspect")
+                return {
+                  ...answer(current ? "blocked" : "available"),
+                  ...(current
+                    ? {
+                        reservation: {
+                          ownerId: current.owner_id,
+                          runtimeId: current.runtime_id,
+                          bootId: current.boot_id,
+                          reservationId: current.reservation_id,
+                        },
+                      }
+                    : {}),
+                };
+              const exact =
+                current?.owner_id === input.ownerId &&
+                current.runtime_id === input.runtimeId &&
+                current.boot_id === input.bootId &&
+                current.reservation_id === input.reservationId;
+              if (input.action === "reconcile") {
+                if (
+                  !exact ||
+                  input.observedBootId !== nativeBootId ||
+                  (input.outcome === "native-replaced"
+                    ? input.bootId === nativeBootId
+                    : input.bootId !== nativeBootId)
+                )
+                  return answer("identity-changed");
+                yield* sql`DELETE FROM orchestration_v2_idle_stop_admission WHERE singleton = 1`;
+                return answer("released");
+              }
+              if (input.bootId !== nativeBootId) return answer("identity-changed");
+              if (input.action === "release") {
+                if (!exact) return answer("identity-changed");
+                yield* sql`DELETE FROM orchestration_v2_idle_stop_admission WHERE singleton = 1`;
+                return answer("released");
+              }
+              if (current) return answer(exact ? "reserved" : "blocked");
+              const bindings = yield* sql`SELECT 1 FROM orchestration_v2_projection_threads
+        WHERE json_extract(payload_json, '$.ralphBinding') IS NOT NULL LIMIT 1`;
+              if (bindings.length > 0) return answer("blocked");
+              yield* sql`INSERT INTO orchestration_v2_idle_stop_admission(singleton, owner_id, runtime_id, boot_id, reservation_id)
+        VALUES (1, ${input.ownerId}, ${input.runtimeId}, ${nativeBootId}, ${input.reservationId})
+        ON CONFLICT(singleton) DO UPDATE SET owner_id = excluded.owner_id, runtime_id = excluded.runtime_id,
+          boot_id = excluded.boot_id, reservation_id = excluded.reservation_id`;
+              return answer("reserved");
+            }),
+          ),
+        )
+        .pipe(Effect.mapError((cause) => new EventSinkWriteError({ eventCount: 0, cause })));
+
     return EventSinkV2.of({
+      idleStop,
       withCheckoutAdmission: (cwd, effect) =>
         executionAdmission.withPermit(inspectCheckout(cwd).pipe(Effect.andThen(effect))),
       write: (input) =>

@@ -1,3 +1,5 @@
+import { selectRalphNotification } from "./RalphNotifications.ts";
+import { classifyRalphWork } from "./RalphWork.ts";
 import { pendingGuestMessageCount } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
@@ -59,6 +61,8 @@ import {
   OrchestrationV2ProviderTurnJson as OrchestrationV2ProviderTurnJsonSchema,
   OrchestrationV2RunAttemptJson as OrchestrationV2RunAttemptJsonSchema,
   OrchestrationV2RunJson as OrchestrationV2RunJsonSchema,
+  OrchestrationV2RalphOutcome,
+  type OrchestrationV2RalphSnapshot,
   OrchestrationV2RuntimeRequestJson as OrchestrationV2RuntimeRequestJsonSchema,
   OrchestrationV2PendingQuestionSummaryJson,
   OrchestrationV2SubagentJson as OrchestrationV2SubagentJsonSchema,
@@ -183,6 +187,7 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "updatedAt"
   | "limitRecovery"
   | "snoozedUntil"
+  | "ralphBinding"
 >;
 
 export type ProjectionThreadPullRequests = Pick<
@@ -444,6 +449,25 @@ export interface ProjectionStoreV2Shape {
     readonly threadId: ThreadId;
     readonly itemId: TurnItemId;
   }) => Effect.Effect<OrchestrationV2TurnItem | null, ProjectionStoreV2Error>;
+  /** Pending outcomes only, using the partial native index; retirement reads the whole cutoff. */
+  readonly getRalphSnapshot: (
+    ownerId: string,
+  ) => Effect.Effect<OrchestrationV2RalphSnapshot, ProjectionStoreV2Error>;
+  readonly isRalphWorkBlocked: (
+    threadId: ThreadId,
+  ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
+  readonly isRalphRetired: (
+    threadId: ThreadId,
+    binding: NonNullable<OrchestrationV2AppThread["ralphBinding"]>,
+  ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
+  readonly getRalphPendingRuns: (
+    threadId: ThreadId,
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2Run>, ProjectionStoreV2Error>;
+  readonly getRalphOutcomeRun: (
+    threadId: ThreadId,
+    eventId: string,
+  ) => Effect.Effect<OrchestrationV2Run | null, ProjectionStoreV2Error>;
   readonly getThreadRecords: <K extends ProjectionRecordField>(
     threadId: ThreadId,
     fields: ReadonlyArray<K>,
@@ -693,6 +717,13 @@ function preserveRunRecordedFields(
   if (current === undefined) return next;
   return {
     ...next,
+    ...(next.ralphAdmission === undefined && current.ralphAdmission !== undefined
+      ? { ralphAdmission: current.ralphAdmission }
+      : {}),
+    ...(current.ralphOutcome !== undefined &&
+    (next.ralphOutcome === undefined || current.ralphOutcome.disposition !== "pending")
+      ? { ralphOutcome: current.ralphOutcome }
+      : {}),
     ...(next.delegatedCompletion === undefined && current.delegatedCompletion !== undefined
       ? { delegatedCompletion: current.delegatedCompletion }
       : {}),
@@ -952,6 +983,9 @@ type ShellThreadRow = {
   readonly thread_id: string;
   readonly payload_json: string;
   readonly forked_from_run_source_thread_id: string | null;
+  readonly latest_ralph_outcome_json: string | null;
+  readonly released_ralph_outcome_json: string | null;
+  readonly blocking_ralph_outcome_json: string | null;
   readonly latest_run_id: string | null;
   readonly latest_run_status: string | null;
   readonly latest_run_requested_at: string | null;
@@ -1077,6 +1111,7 @@ const encodeContextTransferPayload = Schema.encodeEffect(
 const decodeThreadPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJsonSchema),
 );
+const decodeRalphOutcome = Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2RalphOutcome));
 const decodeRunPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2RunJsonSchema),
 );
@@ -1538,6 +1573,22 @@ export function threadShellFromProjection(
     ...(projection.thread.delegatedFrom === undefined
       ? {}
       : { delegatedFrom: projection.thread.delegatedFrom }),
+    ...(projection.thread.ralphRetiredBinding === undefined
+      ? {}
+      : { ralphRetiredBinding: projection.thread.ralphRetiredBinding }),
+    ralphBinding: projection.thread.ralphBinding ?? null,
+    ralphOutcome: latestRun?.ralphOutcome ?? null,
+    ralphNotification: selectRalphNotification(
+      latestRun?.id ?? null,
+      latestRun?.ralphOutcome,
+      runs
+        .filter((run) => run.ralphOutcome?.disposition === "released")
+        .toSorted((a, b) => b.ordinal - a.ordinal)[0]?.ralphOutcome,
+    ),
+    ralphReleasedOutcome:
+      runs
+        .filter((run) => run.ralphOutcome?.disposition === "released")
+        .toSorted((a, b) => b.ordinal - a.ordinal)[0]?.ralphOutcome ?? null,
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -1659,6 +1710,8 @@ function isActivityRunForShell(
 }
 
 type ShellThreadState = {
+  readonly ralphOutcome: OrchestrationV2Run["ralphOutcome"] | null;
+  readonly ralphReleasedOutcome: OrchestrationV2Run["ralphOutcome"] | null;
   readonly thread: OrchestrationV2ThreadProjection["thread"];
   readonly latestRunId: RunId | null;
   readonly latestRunStatus: OrchestrationV2ShellThreadStatus;
@@ -1823,6 +1876,17 @@ function shellFromState(input: {
     ...(input.state.thread.delegatedFrom === undefined
       ? {}
       : { delegatedFrom: input.state.thread.delegatedFrom }),
+    ...(input.state.thread.ralphRetiredBinding === undefined
+      ? {}
+      : { ralphRetiredBinding: input.state.thread.ralphRetiredBinding }),
+    ralphBinding: input.state.thread.ralphBinding ?? null,
+    ralphOutcome: input.state.ralphOutcome,
+    ralphReleasedOutcome: input.state.ralphReleasedOutcome,
+    ralphNotification: selectRalphNotification(
+      input.state.latestRunId,
+      input.state.ralphOutcome,
+      input.state.ralphReleasedOutcome,
+    ),
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,
@@ -1929,6 +1993,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             case "thread.model-selection-updated":
             case "thread.provider-switched":
             case "thread.guest-share-updated": {
+              const retired = event.payload.ralphRetiredBinding;
+              if (retired !== undefined)
+                yield* sql`INSERT OR IGNORE INTO orchestration_v2_ralph_retirements
+                (thread_id, owner_id, loop_id, revision) VALUES (${event.threadId}, ${retired.ownerId}, ${retired.loopId}, ${retired.revision})`;
               const payloadJson = yield* encodeThreadPayload(event.payload);
               const payload = parseEncodedPayload(payloadJson);
               yield* sql`
@@ -2019,7 +2087,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 requested_at = excluded.requested_at,
                 completed_at = excluded.completed_at,
                 payload_json = ${keepRecordedRunField(
-                  keepRecordedRunField(sql`excluded.payload_json`, "$.delegatedCompletion"),
+                  keepRecordedRunField(
+                    keepRecordedRunField(
+                      keepRecordedRunField(sql`excluded.payload_json`, "$.ralphAdmission"),
+                      "$.ralphOutcome",
+                    ),
+                    "$.delegatedCompletion",
+                  ),
                   "$.restartCancelledBackgroundWork",
                 )}
             `;
@@ -3858,6 +3932,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             )
             AND json_extract(t.payload_json, '$.archivedAt') IS NULL
             AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'
+            AND json_extract(t.payload_json, '$.ralphBinding') IS NULL
             AND json_extract(item.payload_json, '$.failure.class') = 'usage_limit'
             AND json_extract(item.payload_json, '$.failure.resetAt') IS NOT NULL
             AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) > julianday(COALESCE(r.completed_at, json_extract(t.payload_json, '$.updatedAt')))
@@ -3911,6 +3986,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             settledOverride: thread.settledOverride,
             pendingRuntimeRequest: null,
             limitRecovery: thread.limitRecovery ?? null,
+            ralphBinding: thread.ralphBinding ?? null,
             snoozedUntil: thread.snoozedUntil ?? null,
           });
         }
@@ -5312,6 +5388,109 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause })),
       );
 
+    const getRalphSnapshot: ProjectionStoreV2Shape["getRalphSnapshot"] = (ownerId) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const snapshot = yield* getShellSnapshot();
+            const retiredRows = yield* sql<{
+              readonly thread_id: string;
+            }>`SELECT thread_id FROM orchestration_v2_projection_threads
+        WHERE archived_at IS NOT NULL AND deleted_at IS NULL
+          AND json_extract(payload_json, '$.ralphRetiredBinding.ownerId') = ${ownerId}
+          AND (json_extract(payload_json, '$.ralphLastReceipt.result.kind') IS NOT 'retired'
+            OR json_extract(payload_json, '$.ralphLastReceipt.binding.loopId') IS NOT json_extract(payload_json, '$.ralphRetiredBinding.loopId')
+            OR json_extract(payload_json, '$.ralphLastReceipt.binding.revision') IS NOT json_extract(payload_json, '$.ralphRetiredBinding.revision')
+            OR EXISTS (SELECT 1 FROM orchestration_v2_projection_runs r
+              WHERE r.thread_id = orchestration_v2_projection_threads.thread_id
+                AND json_extract(r.payload_json, '$.ralphOutcome.disposition') = 'pending'))`;
+            const retired =
+              retiredRows.length === 0
+                ? []
+                : (yield* getShellSnapshot({
+                    location: "archive",
+                    threadIds: retiredRows.map((row) => ThreadId.make(row.thread_id)),
+                  })).threads;
+            const schedules = yield* sql<{
+              readonly thread_id: string;
+            }>`SELECT DISTINCT thread_id FROM scheduled_tasks WHERE enabled = 1 AND thread_id IS NOT NULL`;
+            const enabled = new Set(schedules.map((row) => row.thread_id));
+            const queues = yield* sql<{
+              readonly thread_id: string;
+              readonly held: number;
+            }>`SELECT r.thread_id,
+        json_extract(r.payload_json, '$.queueHeld') IS 1 AS held
+        FROM orchestration_v2_projection_runs r
+        LEFT JOIN orchestration_v2_projection_messages m ON m.message_id = json_extract(r.payload_json, '$.userMessageId')
+        WHERE r.status = 'queued'
+        ORDER BY r.thread_id, json_extract(m.payload_json, '$.delegatedCompletion') IS NOT NULL DESC,
+          COALESCE(json_extract(r.payload_json, '$.queuePosition'), r.ordinal), r.ordinal`;
+            const queue = new Map<string, "held" | "ready">();
+            for (const row of queues)
+              if (!queue.has(row.thread_id))
+                queue.set(row.thread_id, row.held === 1 ? "held" : "ready");
+            const threads = yield* Effect.forEach([...snapshot.threads, ...retired], (thread) =>
+              Effect.gen(function* () {
+                const pending =
+                  thread.ralphBinding?.ownerId === ownerId ||
+                  thread.ralphRetiredBinding?.ownerId === ownerId
+                    ? yield* getRalphPendingRuns(thread.id, 64)
+                    : [];
+                return {
+                  thread,
+                  humanQueue: queue.get(thread.id) ?? ("empty" as const),
+                  work: classifyRalphWork(thread, enabled.has(thread.id)),
+                  outcomes: pending.flatMap((run) =>
+                    run.ralphOutcome === undefined ? [] : [run.ralphOutcome],
+                  ),
+                };
+              }),
+            );
+            return { capabilityVersion: 1 as const, threads };
+          }),
+        )
+        .pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+    const isRalphWorkBlocked: ProjectionStoreV2Shape["isRalphWorkBlocked"] = Effect.fn(
+      "ProjectionStore.isRalphWorkBlocked",
+    )(
+      function* (threadId) {
+        const shell = yield* getThreadShell(threadId);
+        if (shell === null) return true;
+        const scheduled =
+          yield* sql`SELECT 1 FROM scheduled_tasks WHERE enabled = 1 AND thread_id = ${threadId} LIMIT 1`;
+        const work = classifyRalphWork(shell, scheduled.length > 0);
+        return work.executing || work.eventWait || work.inputPending;
+      },
+      (effect, threadId) => effect.pipe(Effect.mapError(controlReadError(threadId))),
+    );
+    const isRalphRetired: ProjectionStoreV2Shape["isRalphRetired"] = (threadId, binding) =>
+      sql`SELECT 1 FROM orchestration_v2_ralph_retirements WHERE thread_id = ${threadId}
+        AND owner_id = ${binding.ownerId} AND loop_id = ${binding.loopId} AND revision = ${binding.revision}`.pipe(
+        Effect.map((rows) => rows.length > 0),
+        Effect.mapError(controlReadError(threadId)),
+      );
+    const getRalphPendingRuns: ProjectionStoreV2Shape["getRalphPendingRuns"] = (threadId, limit) =>
+      sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM orchestration_v2_projection_runs
+        WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.ralphOutcome.disposition') = 'pending'
+        ORDER BY ordinal, run_id ${limit === undefined ? sql`` : sql`LIMIT ${limit}`}`.pipe(
+        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decodeRunPayload(row.payload_json))),
+        Effect.mapError(controlReadError(threadId)),
+      );
+    const getRalphOutcomeRun: ProjectionStoreV2Shape["getRalphOutcomeRun"] = (threadId, eventId) =>
+      sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM orchestration_v2_projection_runs
+        WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.ralphOutcome.eventId') IS NOT NULL
+          AND json_extract(payload_json, '$.ralphOutcome.eventId') = ${eventId}
+        LIMIT 1`.pipe(
+        Effect.flatMap((rows) =>
+          rows[0] === undefined ? Effect.succeed(null) : decodeRunPayload(rows[0].payload_json),
+        ),
+        Effect.mapError(controlReadError(threadId)),
+      );
+
     const getThreadRecords: ProjectionStoreV2Shape["getThreadRecords"] = (
       threadId,
       fields,
@@ -5822,6 +6001,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   THEN json_extract(t.payload_json, '$.forkedFrom.threadId')
                 ELSE NULL
               END AS forked_from_run_source_thread_id,
+              (SELECT json_extract(released.payload_json, '$.ralphOutcome')
+                FROM orchestration_v2_projection_runs released
+                WHERE released.thread_id = t.thread_id AND json_extract(released.payload_json, '$.ralphOutcome.disposition') = 'released'
+                ORDER BY released.ordinal DESC, released.run_id DESC LIMIT 1) AS released_ralph_outcome_json,
+              json_extract(presented.payload_json, '$.ralphOutcome') AS latest_ralph_outcome_json,
+              json_extract(blocked.payload_json, '$.ralphOutcome') AS blocking_ralph_outcome_json,
               presented.run_id AS latest_run_id,
               presented.status AS latest_run_status,
               presented.requested_at AS latest_run_requested_at,
@@ -6435,6 +6620,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           row.terminal_failure_payload_json === null
             ? null
             : yield* decodeTurnItemPayload(row.terminal_failure_payload_json);
+        let ralphOutcome =
+          row.latest_ralph_outcome_json === null
+            ? null
+            : yield* decodeRalphOutcome(row.latest_ralph_outcome_json);
         let latestRunId = row.latest_run_id === null ? null : RunId.make(row.latest_run_id);
         let latestRunStatus = shellStatusFromStoredRunStatus(row.latest_run_status);
         let latestRunRequestedAt =
@@ -6461,6 +6650,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             ).lastErrorClass === "usage_limit";
           if (blocksQueue && blockingFailure !== null) {
             terminalFailureItem = blockingFailure;
+            ralphOutcome =
+              row.blocking_ralph_outcome_json === null
+                ? null
+                : yield* decodeRalphOutcome(row.blocking_ralph_outcome_json);
             latestRunId = RunId.make(row.blocking_run_id);
             latestRunStopRequested = row.blocking_run_stop_requested === 1;
             latestRunStatus = "failed";
@@ -6497,6 +6690,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         ];
         return {
           thread,
+          ralphOutcome,
+          ralphReleasedOutcome:
+            row.released_ralph_outcome_json === null
+              ? null
+              : yield* decodeRalphOutcome(row.released_ralph_outcome_json),
           latestRunId,
           latestRunStatus,
           latestRunRequestedAt,
@@ -6977,6 +7175,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getMessageCount: readOnReader(getMessageCount),
       getNextTurnItemOrdinal: readOnReader(getNextTurnItemOrdinal),
       getTurnItem: readOnReader(getTurnItem),
+      getRalphSnapshot: readOnReader(getRalphSnapshot),
+      isRalphWorkBlocked: readOnReader(isRalphWorkBlocked),
+      isRalphRetired: readOnReader(isRalphRetired),
+      getRalphPendingRuns: readOnReader(getRalphPendingRuns),
+      getRalphOutcomeRun: readOnReader(getRalphOutcomeRun),
       getThreadRecords: (threadId, fields, filter) =>
         getThreadRecords(threadId, fields, filter).pipe(NodeSqliteClient.readOnly),
       getRuntimeRequest: readOnReader(getRuntimeRequest),

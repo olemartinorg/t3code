@@ -225,7 +225,11 @@ import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
+import {
+  requiredScopeForDeviceList,
+  rpcAuthorizationError,
+  authorizeRalphOwner as requireRalphOwner,
+} from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -1864,55 +1868,100 @@ export const layerWsRpc = (
         return result;
       });
 
+      const authorizeRalphOwner = (ownerId: string) => requireRalphOwner(currentSession, ownerId);
       const handlers = ServerWsRpcGroup.omit(WS_METHODS.vcsAdvanceBranchGuarded).of({
-        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
-          Effect.annotateCurrentSpan({
-            "orchestration_v2.command_id": command.commandId,
-            "orchestration_v2.command_type": command.type,
-            "orchestration_v2.thread_id":
-              command.type === "thread.fork" || command.type === "thread.merge_back"
-                ? command.targetThreadId
-                : command.type === "delegated_task.request" ||
-                    command.type === "delegated_task.wake-policy" ||
-                    command.type === "delegated_task.completion-delivery.acknowledge" ||
-                    command.type === "delegated_task.completion-delivery.dispose" ||
-                    command.type === "thread.created.record"
-                  ? command.parentThreadId
-                  : command.threadId,
-            ...(command.type === "thread.fork" || command.type === "thread.merge_back"
-              ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
-              : {}),
-          }).pipe(
-            Effect.andThen(
-              startup
-                .enqueueCommand(
-                  (command.type === "prepared-run.retry"
-                    ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
-                      )
-                  ).pipe(Effect.provide(intakeContext)),
-                )
-                .pipe(
-                  Effect.tap((result) =>
-                    result.replayed ? Effect.void : recordClientCommandAnalytics(command),
-                  ),
-                  Effect.map((result) => ({ sequence: result.sequence })),
-                  Effect.mapError((cause) => {
-                    const detail = userFacingDispatchErrorMessage(cause);
-                    return new OrchestrationV2DispatchCommandError({
-                      commandId: command.commandId,
-                      commandType: command.type,
-                      message: detail ?? "Failed to dispatch orchestration V2 command",
-                      ...(detail === undefined ? {} : { detail }),
-                      cause,
-                    });
+        [ORCHESTRATION_V2_WS_METHODS.idleStop]: (input) =>
+          orchestrationEngine.idleStop(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2GetShellSnapshotError({
+                  message: "Could not reserve automatic Stop.",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.getRalphSnapshot]: Effect.fn("Ws.getRalphSnapshot")(
+          function* ({ ownerId }) {
+            yield* authorizeRalphOwner(ownerId);
+            const snapshot = yield* orchestrationEngine.getRalphSnapshot(ownerId).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationV2GetShellSnapshotError({
+                    message: "Could not read native supervision state.",
+                    cause,
                   }),
+              ),
+            );
+            return { environmentId: yield* serverEnvironment.getEnvironmentId, ...snapshot };
+          },
+        ),
+        [ORCHESTRATION_V2_WS_METHODS.getRalphCommandReceipt]: ({ ownerId, commandId }) =>
+          authorizeRalphOwner(ownerId).pipe(
+            Effect.andThen(orchestrationEngine.getRalphCommandReceipt(ownerId, commandId)),
+            Effect.mapError((cause) =>
+              cause._tag === "EnvironmentAuthorizationError"
+                ? cause
+                : new OrchestrationV2GetShellSnapshotError({
+                    message: "Could not read native command receipt.",
+                    cause,
+                  }),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
+          (command.type === "ralph.control"
+            ? authorizeRalphOwner(command.binding.ownerId)
+            : Effect.void
+          ).pipe(
+            Effect.andThen(
+              Effect.annotateCurrentSpan({
+                "orchestration_v2.command_id": command.commandId,
+                "orchestration_v2.command_type": command.type,
+                "orchestration_v2.thread_id":
+                  command.type === "thread.fork" || command.type === "thread.merge_back"
+                    ? command.targetThreadId
+                    : command.type === "delegated_task.request" ||
+                        command.type === "delegated_task.wake-policy" ||
+                        command.type === "delegated_task.completion-delivery.acknowledge" ||
+                        command.type === "delegated_task.completion-delivery.dispose" ||
+                        command.type === "thread.created.record"
+                      ? command.parentThreadId
+                      : command.threadId,
+                ...(command.type === "thread.fork" || command.type === "thread.merge_back"
+                  ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
+                  : {}),
+              }).pipe(
+                Effect.andThen(
+                  startup
+                    .enqueueCommand(
+                      (command.type === "prepared-run.retry"
+                        ? threadLaunch.retryPreparation(command)
+                        : ThreadMessageIntake.dispatchCommand(
+                            ThreadManagementService.withCreationProvenance(command, {
+                              createdBy: "user",
+                              creationSource:
+                                "creationSource" in command ? command.creationSource : "web",
+                            }),
+                          )
+                      ).pipe(Effect.provide(intakeContext)),
+                    )
+                    .pipe(
+                      Effect.tap((result) =>
+                        result.replayed ? Effect.void : recordClientCommandAnalytics(command),
+                      ),
+                      Effect.map((result) => ({ sequence: result.sequence })),
+                      Effect.mapError((cause) => {
+                        const detail = userFacingDispatchErrorMessage(cause);
+                        return new OrchestrationV2DispatchCommandError({
+                          commandId: command.commandId,
+                          commandType: command.type,
+                          message: detail ?? "Failed to dispatch orchestration V2 command",
+                          ...(detail === undefined ? {} : { detail }),
+                          cause,
+                        });
+                      }),
+                    ),
                 ),
+              ),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
