@@ -16,11 +16,12 @@ vi.mock("@t3tools/client-runtime/state/thread-execution", () => ({
   deriveLatestThreadRun: () => null,
   deriveThreadRuntime: () => null,
 }));
-vi.mock("./entities", () => ({ useProject: () => null, useThreadShell: () => null }));
+vi.mock("./entities", () => ({ useProject: () => null, useQuietThreadShell: () => null }));
 vi.mock("./threads", () => ({
   useEnvironmentThread: () => ({ data: Option.some(fixture.projection) }),
 }));
-vi.mock("./pending-thread-creation", () => ({
+vi.mock("./pending-thread-creation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./pending-thread-creation")>()),
   pendingThreadCreationOutcomesAtom: {},
   pendingThreadCreationShell: vi.fn(),
   resolvePendingThreadCreation: () => null,

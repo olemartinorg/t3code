@@ -216,7 +216,7 @@ it.effect("outbox records alone never override an idle native shell", () =>
       ],
     });
     yield* sink.withCheckoutAdmission(cwd, Effect.void);
-    yield* outbox.claimNext({ workerId: "test-worker", leaseDurationMs: 60_000 });
+    yield* outbox.claimNext({ workerId: "test-worker" });
     yield* sink.withCheckoutAdmission(cwd, Effect.void);
     assert.isTrue(
       yield* outbox.fail({

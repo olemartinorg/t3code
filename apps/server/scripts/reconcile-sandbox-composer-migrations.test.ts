@@ -66,7 +66,7 @@ it.effect.each([false, true, "68"] as const)(
       const result = yield* reconcileSandboxComposerMigrations();
       assert.deepEqual(
         result.migrated,
-        withIndex === "68" ? [] : migrationManifest.filter(([id]) => id >= 62),
+        migrationManifest.filter(([id]) => id >= (withIndex === "68" ? 68 : 62)),
       );
       assert.deepEqual(yield* retained(), before);
       assert.deepEqual(

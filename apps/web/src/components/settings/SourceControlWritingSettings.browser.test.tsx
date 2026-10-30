@@ -10,7 +10,9 @@ import type { ScopedSettingsPatch } from "./scopedSettings";
 type WritingStyle = typeof DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle;
 const state = vi.hoisted(() => ({
   styles: [] as WritingStyle[],
-  updateSettings: vi.fn<(patch: ScopedSettingsPatch) => Promise<void>>().mockResolvedValue(undefined),
+  updateSettings: vi
+    .fn<(patch: ScopedSettingsPatch) => Promise<void>>()
+    .mockResolvedValue(undefined),
 }));
 
 vi.mock(import("@tanstack/react-router"), async (original) => ({
@@ -44,8 +46,6 @@ vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironmentProviders: () => new Map(),
 }));
-// The real row reads write permission and overrides from live environment state; this
-// suite is about how the section writes mixed writing styles.
 vi.mock(import("./settingsLayout"), async (original) => ({
   ...(await original()),
   SettingsRow: ({ title, control, resetAction, children }) => (
@@ -101,6 +101,7 @@ describe("mixed source control instructions", () => {
       customInstructions,
     }));
 
+    await userEvent.click(page.getByRole("button", { name: "Advanced" }));
     await userEvent.click(resetButton("change request templates"));
 
     expect(state.updateSettings).toHaveBeenCalledTimes(1);

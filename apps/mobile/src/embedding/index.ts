@@ -7,10 +7,8 @@ export {
   useSettingsEnvironmentFilter,
 } from "../features/settings/settings-environment-filter";
 export { Host as DialogHost } from "../components/ui/Dialog";
-export { VoiceInputProvider } from "../features/voice-input/VoiceInputProvider";
 export { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
 export {
-  ExistingThreadSettingsRouteProvider,
   ExistingThreadSettingsRouteScreen,
   NewTaskThreadSettingsRouteScreen,
 } from "../features/threads/ThreadSettingsSheet";
@@ -31,22 +29,16 @@ export {
 export { ThreadFileScreen } from "../features/files/ThreadFilesRouteScreen";
 export { ThreadQueueSheet } from "../features/threads/ThreadQueueControl";
 export { NewTaskFlowProvider } from "../features/threads/new-task-flow-provider";
-export { IncomingShareProvider } from "../features/sharing/IncomingShareProvider";
 export { GlobalVoiceInputControl } from "../features/voice-input/GlobalVoiceInputControl";
-export { useThreadOutboxDrain } from "../state/use-thread-outbox-drain";
 export { AttachmentFileScreen } from "../features/files/AttachmentFileScreen";
-export { useComposerAttachmentUploadWorker } from "../state/composer-attachment-uploads";
-export { SettingsEnvironmentNewThreadsRouteScreen } from "../features/settings/SettingsServerControlsRouteScreen";
 export {
   SettingsEnvironmentSourceControlRouteScreen,
-  SettingsEnvironmentAgentBehaviorRouteScreen,
   SettingsEnvironmentMaintenanceRouteScreen,
 } from "../features/settings/SettingsServerControlsRouteScreen";
 export { SettingsIndexSections } from "../features/settings/SettingsRouteScreen";
 export { SettingsAppearanceRouteScreen } from "../features/settings/SettingsAppearanceRouteScreen";
 export { SettingsProjectGroupingRouteScreen } from "../features/settings/SettingsProjectGroupingRouteScreen";
 export { SettingsProjectOverviewRouteScreen } from "../features/settings/SettingsProjectOverviewRouteScreen";
-export { SettingsThreadsRouteScreen } from "../features/settings/SettingsThreadsRouteScreen";
 export { SettingsFollowUpRouteScreen } from "../features/settings/SettingsFollowUpRouteScreen";
 export { SettingsProviderAccountsRouteScreen } from "../features/settings/SettingsProviderAccountsRouteScreen";
 export {
@@ -58,7 +50,6 @@ export {
   ScheduledTaskModelPickerRouteScreen,
   ScheduledTaskBranchPickerRouteScreen,
 } from "../features/settings/ScheduledTaskPickerScreens";
-export { ScheduledTaskEditorProvider } from "../features/settings/scheduled-task-editor";
 export { ArchivedThreadsRouteScreen } from "../features/archive/ArchivedThreadsRouteScreen";
 export { UsageRouteScreen } from "../features/usage/UsageRouteScreen";
 export { UsageLimitAccountScreen } from "../features/usage/UsageLimitsPooled";
@@ -79,3 +70,18 @@ export {
   ThreadListV2SnoozedShelfHeader,
   ThreadListV2SettledShelfHeader,
 } from "../features/threads/thread-list-v2-items";
+
+export { installThreadOutboxDelivery } from "../state/threadOutboxDelivery";
+export { installComposerAttachmentUploads } from "../state/composer-attachment-uploads";
+export { startIncomingShareInbox } from "../features/sharing/IncomingShareProvider";
+export { installAppearanceRuntime } from "../features/settings/appearance/AppearancePreferencesProvider";
+export { subscribeComposerDraftModelReconciliation } from "../state/use-composer-drafts";
+export {
+  SettingsThreadsRouteScreen,
+  SettingsWorktreesRouteScreen,
+} from "../features/settings/SettingsServerControlsRouteScreen";
+export { SettingsLabsRouteScreen } from "../features/settings/ThreadSettingsSections";
+export { SettingsNavigationRouteScreen } from "../features/settings/SettingsNavigationRouteScreen";
+
+export { newTaskFlowKey, pruneNewTaskFlowStates } from "../features/threads/new-task-flow-state";
+export { isDraftThreadRoute } from "../features/threads/thread-route-state";
