@@ -1,6 +1,8 @@
+import { selectRalphNotification } from "../orchestration-v2/RalphNotifications.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
+  CommandId,
   EnvironmentId,
   EventId,
   MessageId,
@@ -89,6 +91,11 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
     snoozedAt: null,
     pinnedAt: null,
     ...overrides,
+    ralphNotification: selectRalphNotification(
+      overrides.latestRunId ?? null,
+      overrides.ralphOutcome,
+      overrides.ralphReleasedOutcome,
+    ),
   };
 }
 
@@ -719,3 +726,49 @@ describe("AgentAwarenessRelay", () => {
     ),
   );
 });
+
+it.effect(
+  "relay preserves released A identity/time behind consumed B and publishes final only once",
+  () =>
+    Effect.gen(function* () {
+      const { relay, currentShell, publications } = yield* makeTestRelay();
+      yield* relay.publishThread(THREAD_ID);
+      const now = yield* DateTime.now;
+      const a = {
+        eventId: EventId.make("final-A"),
+        runId: RunId.make("run-A"),
+        binding: { ownerId: "supervisor", loopId: "loop", revision: 1 },
+        admissionCommandId: CommandId.make("admit-A"),
+        occurredAt: DateTime.toEpochMillis(now),
+        finalResponse: "ralph-complete",
+        workDurationMs: 1_000,
+        recovery: false,
+        disposition: "released",
+      } as const;
+      const b = {
+        ...a,
+        eventId: EventId.make("final-B"),
+        runId: RunId.make("run-B"),
+        occurredAt: a.occurredAt + 1_000,
+        disposition: "consumed",
+      } as const;
+      const finished = shell({
+        status: "completed",
+        latestRunId: b.runId,
+        latestRunCompletedAt: DateTime.makeUnsafe(b.occurredAt),
+        ralphOutcome: b,
+        ralphReleasedOutcome: a,
+      });
+      yield* Ref.set(currentShell, finished);
+      yield* relay.publishThread(THREAD_ID);
+      yield* TestClock.adjust("5 seconds");
+      yield* relay.drain;
+      const finals = () => publications.filter((p) => p.state?.phase === "completed");
+      assert.strictEqual(finals().length, 1);
+      assert.strictEqual(finals()[0]!.state!.updatedAt, DateTime.formatIso(now));
+      yield* relay.publishThread(THREAD_ID);
+      yield* TestClock.adjust("5 seconds");
+      yield* relay.drain;
+      assert.strictEqual(finals().length, 1);
+    }),
+);

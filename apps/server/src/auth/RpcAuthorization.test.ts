@@ -1,5 +1,10 @@
 import {
   AuthEnvironmentMaintainScope,
+  AuthRalphSuperviseScope,
+  RalphSupervisorRpcGroup,
+  ORCHESTRATION_V2_WS_METHODS,
+  CommandId,
+  ProjectId,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
@@ -377,5 +382,53 @@ it.effect("denies manual cleanup before the handler without settings permission"
       requiredPermission: AuthSettingsWriteScope,
     });
     expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("limits the native supervisor RPC group to Ralph commands under its narrow grant", () =>
+  Effect.gen(function* () {
+    const group = RalphSupervisorRpcGroup.omit(
+      ORCHESTRATION_V2_WS_METHODS.getRalphSnapshot,
+      ORCHESTRATION_V2_WS_METHODS.getRalphCommandReceipt,
+      ORCHESTRATION_V2_WS_METHODS.subscribeShell,
+      WS_METHODS.scheduledTasksSubscribe,
+    );
+    const handled: string[] = [];
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, (command) =>
+            Effect.sync(() => {
+              handled.push(command.type);
+              return { sequence: 1 };
+            }),
+          ),
+          RpcAuthorization.layer([AuthRalphSuperviseScope]),
+        ),
+      ),
+    );
+    const commandId = CommandId.make("supervisor-command");
+    const threadId = ThreadId.make("supervised-thread");
+    expect(
+      yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand]({
+        type: "ralph.control",
+        commandId,
+        threadId,
+        projectId: ProjectId.make("project"),
+        binding: { ownerId: "owner", loopId: "loop", revision: 1 },
+        action: { kind: "arm" },
+      }),
+    ).toEqual({ sequence: 1 });
+    expect(
+      yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand]({
+        type: "thread.stop",
+        commandId,
+        threadId,
+      }).pipe(Effect.flip),
+    ).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: AuthOrchestrationOperateScope,
+    });
+    expect(handled).toEqual(["ralph.control"]);
   }).pipe(Effect.scoped),
 );

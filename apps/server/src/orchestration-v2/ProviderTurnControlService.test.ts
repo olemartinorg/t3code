@@ -209,6 +209,11 @@ it.effect(
         ProjectionStore.ProjectionStoreV2,
         ProjectionStore.ProjectionStoreV2.of({
           apply: () => Effect.void,
+          getRalphSnapshot: () => Effect.die("unused getRalphSnapshot"),
+          isRalphWorkBlocked: () => Effect.die("unused isRalphWorkBlocked"),
+          isRalphRetired: () => Effect.die("unused isRalphRetired"),
+          getRalphPendingRuns: () => Effect.die("unused getRalphPendingRuns"),
+          getRalphOutcomeRun: () => Effect.die("unused getRalphOutcomeRun"),
           getLimitRecoveryCandidates: () => Effect.die("unused getLimitRecoveryCandidates"),
           getOpenRemoteDelegatedTasks: Effect.die("unused getOpenRemoteDelegatedTasks"),
           getShellSnapshot: () => Effect.die("unused getShellSnapshot"),

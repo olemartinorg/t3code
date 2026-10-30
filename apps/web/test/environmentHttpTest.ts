@@ -100,6 +100,8 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
               }),
             )
             .handle("token", () => unexpectedEndpoint("auth.token"))
+            .handle("ralphSession", () => unexpectedEndpoint("auth.ralphSession"))
+            .handle("renewRalphSession", () => unexpectedEndpoint("auth.renewRalphSession"))
             .handle("webSocketTicket", () => unexpectedEndpoint("auth.webSocketTicket"))
             .handle("webSocketTicketFor", () => unexpectedEndpoint("auth.webSocketTicketFor"))
             .handle(

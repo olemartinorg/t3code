@@ -159,12 +159,12 @@ it.effect.each(["unknown-name", "extra-migration", "wrong-prefix"])(
 
 // Native migration 68 now belongs to ShellStopRequestIndex. The offline custom
 // converter must not reinterpret that ledger, or an unsupported newer ledger.
-it.effect.each([68, 73, 74])("refuses native or future ledger %s without changing it", (head) =>
+it.effect.each([68, 73, 74, 75])("refuses native or future ledger %s without changing it", (head) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    yield* runMigrations({ toMigrationInclusive: Math.min(head, 73) });
-    if (head === 74)
-      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (74, 'FutureNativeMigration')`;
+    yield* runMigrations({ toMigrationInclusive: Math.min(head, 74) });
+    if (head === 75)
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (75, 'FutureNativeMigration')`;
     const before = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
     assert.isTrue(Exit.isFailure(yield* Effect.exit(reconcileSandboxComposerMigrations())));
     assert.deepEqual(yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`, before);
@@ -172,5 +172,27 @@ it.effect.each([68, 73, 74])("refuses native or future ledger %s without changin
       yield* sql`SELECT name FROM sqlite_master WHERE name LIKE 'composer_draft_presence_%'`,
       [],
     );
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
+
+it.effect("ordinary native 73 migrates to Ralph 74 without finite legacy admission", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 73 });
+    yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
+    VALUES ('native-session', 'retained-owner', '["orchestration:read"]', 'bearer', '2026-10-20T12:00:00Z', '2026-11-20T12:00:00Z')`;
+    const before = yield* sql`SELECT * FROM auth_sessions`;
+    const added = yield* runMigrations();
+    assert.deepEqual(
+      added,
+      migrationManifest.filter(([id]) => id > 73),
+    );
+    assert.deepEqual(yield* sql`SELECT * FROM auth_sessions`, before);
+    assert.deepEqual(yield* runMigrations(), []);
+    assert.deepEqual(
+      yield* sql`SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`,
+      migrationManifest.map(([migration_id, name]) => ({ migration_id, name })),
+    );
+    assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_ralph_retirements`, []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

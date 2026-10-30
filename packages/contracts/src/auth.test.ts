@@ -39,7 +39,7 @@ describe("authorization grants", () => {
 
   const decodeOldScopes = Schema.decodeUnknownSync(oldScopes);
 
-  it.each(AuthEnvironmentScope.literals)(
+  it.each(AuthEnvironmentScope.literals.filter((scope) => scope !== "ralph:supervise"))(
     "keeps %s permission errors decodable by old clients",
     (scope) => {
       const response = authScopeRequiredResponse(scope);
@@ -47,6 +47,23 @@ describe("authorization grants", () => {
       expect(response.requiredPermission).toBe(scope);
     },
   );
+
+  it("requires the exact current Ralph permission without an older parent grant", () => {
+    expect(authScopeRequiredResponse("ralph:supervise")).toEqual({
+      requiredScope: "ralph:supervise",
+      requiredPermission: "ralph:supervise",
+    });
+    expect(
+      sessionGrantsScope(
+        {
+          authenticated: true,
+          scopes: ["orchestration:operate"],
+          auth: {},
+        },
+        "ralph:supervise",
+      ),
+    ).toBe(false);
+  });
 
   it("keeps old clients able to decode grants with new permissions", () => {
     const response = authScopeResponse(AuthStandardClientScopes);

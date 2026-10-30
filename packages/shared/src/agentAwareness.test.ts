@@ -5,8 +5,9 @@ import type {
   OrchestrationV2ThreadShell,
   Project,
   ThreadId,
+  RunId,
 } from "@t3tools/contracts";
-import { ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
+import { EventId, ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { projectThreadAwarenessV2 } from "./agentAwareness.ts";
@@ -23,6 +24,9 @@ describe("projectThreadAwarenessV2", () => {
     overrides: Partial<
       Pick<
         OrchestrationV2ThreadShell,
+        | "ralphOutcome"
+        | "ralphNotification"
+        | "latestRunId"
         | "activityRunStatus"
         | "latestRunStopRequested"
         | "status"
@@ -33,6 +37,7 @@ describe("projectThreadAwarenessV2", () => {
       >
     > = {},
   ) => ({
+    latestRunId: "run-2" as RunId,
     id: "thread-2" as ThreadId,
     lineage: {
       rootThreadId: "thread-2" as ThreadId,
@@ -47,6 +52,60 @@ describe("projectThreadAwarenessV2", () => {
     updatedAt,
     ...overrides,
   });
+
+  it.each(["pending", "consumed", "released"] as const)(
+    "Ralph %s keeps input independent and release uses original time for the exact run",
+    (disposition) => {
+      const outcome = {
+        eventId: EventId.make("final"),
+        runId: "run-2" as RunId,
+        binding: { ownerId: "owner", loopId: "loop", revision: 1 },
+        admissionCommandId: null,
+        occurredAt: Date.parse("2026-05-22T11:59:00Z"),
+        finalResponse: "ralph-complete" as const,
+        workDurationMs: 1000,
+        recovery: false,
+        disposition,
+      };
+      const terminal = v2Thread({
+        status: "completed",
+        ralphOutcome: outcome,
+        ralphNotification:
+          disposition === "released"
+            ? {
+                kind: "released",
+                eventId: outcome.eventId,
+                runId: outcome.runId,
+                occurredAt: outcome.occurredAt,
+                recovery: outcome.recovery,
+              }
+            : { kind: "quiet" },
+      });
+      const input = { environmentId: "env-1" as EnvironmentId, project, thread: terminal };
+      const projected = projectThreadAwarenessV2(input);
+      if (disposition === "released") expect(projected?.updatedAt).toBe("2026-05-22T11:59:00.000Z");
+      else expect(projected).toBeNull();
+      expect(
+        projectThreadAwarenessV2({
+          ...input,
+          thread: {
+            ...terminal,
+            pendingRuntimeRequest: {
+              id: RuntimeRequestId.make("question"),
+              kind: "user_input",
+              createdAt: updatedAt,
+            },
+          },
+        })?.phase,
+      ).toBe("waiting_for_input");
+      expect(
+        projectThreadAwarenessV2({
+          ...input,
+          thread: { ...terminal, latestRunId: "later" as RunId },
+        })?.updatedAt,
+      ).toBe(disposition === "released" ? "2026-05-22T11:59:00.000Z" : undefined);
+    },
+  );
 
   it("does not announce completion after a manual stop", () => {
     const input = {

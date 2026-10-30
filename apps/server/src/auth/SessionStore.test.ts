@@ -486,4 +486,99 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       }
     }).pipe(Effect.provide(layerSessionStore())),
   );
+  it.effect(
+    "renews the same narrow supervisor identity across original expiry without invalidating its socket",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const issued = yield* sessions.issueRalph("owner-1", "Independent supervisor");
+        expect(issued.scopes).toEqual(["orchestration:read", "ralph:supervise"]);
+        const again = yield* sessions.issueRalph("owner-1", "Independent supervisor");
+        expect(again.sessionId).toBe(issued.sessionId);
+        expect(yield* sessions.listActive()).toHaveLength(1);
+        const invalidated = yield* Deferred.make<void>();
+        yield* sessions
+          .awaitInvalidation(issued.sessionId)
+          .pipe(
+            Effect.andThen(Deferred.succeed(invalidated, undefined)),
+            Effect.forkScoped({ startImmediately: true }),
+          );
+        yield* TestClock.adjust(Duration.minutes(45));
+        const renewed = yield* sessions.renewRalph(issued.token);
+        expect(renewed.sessionId).toBe(issued.sessionId);
+        expect(renewed.expiresAt.epochMilliseconds).toBeGreaterThan(
+          issued.expiresAt.epochMilliseconds,
+        );
+        yield* TestClock.adjust(Duration.minutes(16));
+        expect((yield* sessions.verify(renewed.token)).sessionId).toBe(issued.sessionId);
+        expect((yield* Effect.flip(sessions.verify(issued.token)))._tag).toBe(
+          "SessionTokenExpiredError",
+        );
+        expect(yield* Deferred.isDone(invalidated)).toBe(false);
+        yield* sessions.revoke(issued.sessionId);
+        yield* Deferred.await(invalidated);
+        expect((yield* Effect.flip(sessions.renewRalph(renewed.token)))._tag).toBe(
+          "SessionTokenRevokedError",
+        );
+        expect(
+          (yield* Effect.flip(sessions.issueRalph("owner-1", "Independent supervisor")))._tag,
+        ).toBe("SessionTokenRevokedError");
+      }).pipe(Effect.provide(layerSessionStore())),
+  );
+
+  it.effect("expired supervisor registration cannot be re-enrolled or renewed", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const issued = yield* sessions.issueRalph("expired-owner", "Supervisor", Duration.seconds(1));
+      yield* TestClock.adjust(Duration.seconds(2));
+      expect((yield* Effect.flip(sessions.renewRalph(issued.token)))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+      expect((yield* Effect.flip(sessions.issueRalph("expired-owner", "Supervisor")))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+      expect(yield* sessions.listActive()).toHaveLength(0);
+    }).pipe(Effect.provide(layerSessionStore())),
+  );
+
+  it.effect(
+    "ordinary full-access and other sessions cannot gain renewable supervisor authority",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const ordinary = yield* sessions.issue({
+          method: "bearer-access-token",
+          subject: "ordinary",
+        });
+        expect((yield* Effect.flip(sessions.renewRalph(ordinary.token)))._tag).toBe(
+          "InvalidSessionTokenPayloadError",
+        );
+        const dpop = yield* sessions.issue({
+          ...relaySessionInput,
+          subject: "ralph-supervisor:dpop",
+          scopes: ["orchestration:read", "ralph:supervise"],
+        });
+        expect((yield* Effect.flip(sessions.renewRalph(dpop.token)))._tag).toBe(
+          "InvalidSessionTokenPayloadError",
+        );
+      }).pipe(Effect.provide(layerSessionStore())),
+  );
+
+  it.effect("revocation racing renewal cannot revive the same durable identity", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const issued = yield* sessions.issueRalph("race-owner", "Supervisor");
+      yield* Effect.all(
+        [sessions.renewRalph(issued.token).pipe(Effect.result), sessions.revoke(issued.sessionId)],
+        { concurrency: "unbounded" },
+      );
+      expect((yield* Effect.flip(sessions.verify(issued.token)))._tag).toBe(
+        "SessionTokenRevokedError",
+      );
+      expect((yield* Effect.flip(sessions.issueRalph("race-owner", "Supervisor")))._tag).toBe(
+        "SessionTokenRevokedError",
+      );
+      expect(yield* sessions.listActive()).toHaveLength(0);
+    }).pipe(Effect.provide(layerSessionStore())),
+  );
 });

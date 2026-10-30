@@ -1,6 +1,13 @@
 import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { AnyRouter } from "@tanstack/react-router";
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2RalphOutcome,
+  type OrchestrationV2RalphNotification,
+  CommandId,
+  EventId,
+  RunId,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -105,6 +112,9 @@ const thread = {
   id: "thread",
   title: "Test thread",
   archivedAt: null as string | null,
+  ralphOutcome: null as OrchestrationV2RalphOutcome | null,
+  ralphNotification: null as OrchestrationV2RalphNotification | null,
+  ralphReleasedOutcome: null as OrchestrationV2RalphOutcome | null,
   hasPendingApprovals: false,
   hasPendingUserInput: false,
   session: null as { status: string } | null,
@@ -137,6 +147,9 @@ function toV2ThreadShell(input: typeof thread) {
     createdBy: "user",
     creationSource: "web",
     latestRunId: latestTurn.turnId,
+    ralphOutcome: input.ralphOutcome,
+    ralphReleasedOutcome: input.ralphReleasedOutcome,
+    ralphNotification: input.ralphNotification,
     activeRunId: null,
     status:
       latestTurn.state === "completed"
@@ -259,4 +272,160 @@ it("holds a completion through a continuation gap and notifies once it settles",
   expect(TestNotification.sent).toEqual([]);
   await vi.advanceTimersByTimeAsync(1);
   expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+});
+
+it("keeps pending/consumed Ralph completions quiet, releases once, and leaves required input independent", async () => {
+  await using app = setup();
+  app.start();
+  using _timers = fakeTimers();
+  const outcome = {
+    eventId: EventId.make("ralph-result"),
+    runId: RunId.make("turn-ralph"),
+    binding: { ownerId: "supervisor", loopId: "loop", revision: 1 },
+    admissionCommandId: CommandId.make("admit"),
+    occurredAt: Date.parse("2026-09-13T07:00:01.000Z"),
+    finalResponse: "ralph-complete",
+    workDurationMs: 10,
+    recovery: false,
+  } as const;
+  const finished = {
+    latestTurn: {
+      turnId: outcome.runId,
+      state: "completed",
+      completedAt: "2026-09-13T07:00:01.000Z",
+    },
+  };
+  state.shells.set(
+    "one",
+    shell({
+      ...finished,
+      ralphOutcome: { ...outcome, disposition: "pending" },
+      ralphNotification: { kind: "quiet" },
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent).toEqual([]);
+  expect(state.sound).not.toHaveBeenCalled();
+  state.shells.set(
+    "one",
+    shell({
+      ...finished,
+      ralphOutcome: { ...outcome, disposition: "consumed" },
+      ralphNotification: { kind: "quiet" },
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent).toEqual([]);
+  state.shells.set(
+    "one",
+    shell({
+      ...finished,
+      ralphOutcome: { ...outcome, disposition: "released" },
+      ralphNotification: {
+        kind: "released",
+        eventId: outcome.eventId,
+        runId: outcome.runId,
+        occurredAt: outcome.occurredAt,
+        recovery: outcome.recovery,
+      },
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+  state.shells.set(
+    "one",
+    shell({
+      ...finished,
+      ralphOutcome: { ...outcome, disposition: "released" },
+      ralphNotification: {
+        kind: "released",
+        eventId: outcome.eventId,
+        runId: outcome.runId,
+        occurredAt: outcome.occurredAt,
+        recovery: outcome.recovery,
+      },
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent).toHaveLength(1);
+  state.shells.set(
+    "one",
+    shell({
+      ...finished,
+      hasPendingUserInput: true,
+      ralphOutcome: { ...outcome, disposition: "pending" },
+      ralphNotification: { kind: "quiet" },
+    }),
+  );
+  expect(TestNotification.sent).toHaveLength(2);
+  expect(TestNotification.sent[1]!.title).not.toBe("Thread completed");
+});
+
+it("delivers released final A once behind consumed B and preserves ordinary postcutoff C", async () => {
+  await using app = setup();
+  app.start();
+  using _timers = fakeTimers();
+  const a = {
+    eventId: EventId.make("final-A"),
+    runId: RunId.make("run-A"),
+    binding: { ownerId: "supervisor", loopId: "loop", revision: 1 },
+    admissionCommandId: CommandId.make("admit-A"),
+    occurredAt: Date.parse("2026-09-13T07:00:01Z"),
+    finalResponse: "ralph-complete",
+    workDurationMs: 1_000,
+    recovery: false,
+    disposition: "released",
+  } as const;
+  const b = {
+    ...a,
+    eventId: EventId.make("final-B"),
+    runId: RunId.make("run-B"),
+    occurredAt: a.occurredAt + 1_000,
+    disposition: "consumed",
+  } as const;
+  const finished = {
+    latestTurn: {
+      turnId: b.runId,
+      state: "completed",
+      completedAt: new Date(b.occurredAt).toISOString(),
+    },
+    ralphOutcome: b,
+    ralphReleasedOutcome: a,
+    ralphNotification: {
+      kind: "released",
+      eventId: a.eventId,
+      runId: a.runId,
+      occurredAt: a.occurredAt,
+      recovery: a.recovery,
+    } as const,
+  };
+  state.shells.set("one", shell(finished));
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+  state.shells.set("one", shell(finished));
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent).toHaveLength(1);
+  state.shells.set(
+    "one",
+    shell({
+      latestTurn: { turnId: "run-C", state: "running", completedAt: null },
+      ralphReleasedOutcome: a,
+    }),
+  );
+  state.shells.set(
+    "one",
+    shell({
+      latestTurn: {
+        turnId: "run-C",
+        state: "completed",
+        completedAt: new Date(b.occurredAt + 1_000).toISOString(),
+      },
+      ralphReleasedOutcome: a,
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual([
+    "Thread completed",
+    "Thread completed",
+  ]);
 });
