@@ -61,6 +61,7 @@ it.each([undefined, "", "   ", 42])(
     vi.stubGlobal("HermesInternal", { enablePromiseRejectionTracker: trackRejections });
 
     const observe = await import("./observe");
+    observe.reportError(new Error("caught render failure"));
     await observe.setCrashReportsEnabled(true);
     await observe.setCrashReportsEnabled(false);
 
@@ -90,6 +91,9 @@ it("loads Observe for a configured relay and preserves saved preferences and rej
   });
   expect(state.dispatchEvents).not.toHaveBeenCalled();
   const tracker = trackRejections.mock.calls[0]?.[0];
+  const caught = new Error("caught render failure");
+  observe.reportError(caught);
+  expect(state.reportError).toHaveBeenCalledWith(caught);
   const rejection = new Error("unhandled rejection");
   tracker.onUnhandled(1, rejection);
   expect(state.reportError).toHaveBeenCalledWith(rejection);

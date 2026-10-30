@@ -26,6 +26,10 @@ if (!__DEV__ && Observe) {
   });
 }
 
+export function reportError(error: unknown) {
+  Observe?.reportError(error);
+}
+
 let latestConfiguration = 0;
 
 // While sending is off, a dispatch pass drops what it finds, so one runs before turning it back on.
