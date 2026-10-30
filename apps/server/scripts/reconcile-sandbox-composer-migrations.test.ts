@@ -156,3 +156,21 @@ it.effect.each(["unknown-name", "extra-migration", "wrong-prefix"])(
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
+
+// Native migration 68 now belongs to ShellStopRequestIndex. The offline custom
+// converter must not reinterpret that ledger, or an unsupported newer ledger.
+it.effect.each([68, 73, 74])("refuses native or future ledger %s without changing it", (head) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: Math.min(head, 73) });
+    if (head === 74)
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (74, 'FutureNativeMigration')`;
+    const before = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(reconcileSandboxComposerMigrations())));
+    assert.deepEqual(yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`, before);
+    assert.deepEqual(
+      yield* sql`SELECT name FROM sqlite_master WHERE name LIKE 'composer_draft_presence_%'`,
+      [],
+    );
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
