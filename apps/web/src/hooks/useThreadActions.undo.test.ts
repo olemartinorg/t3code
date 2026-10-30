@@ -1,5 +1,12 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  OrchestrationV2DispatchCommandError,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { useThreadActions } from "./useThreadActions";
@@ -28,6 +35,7 @@ vi.mock("../state/session", async (original) => ({
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
+  useContext: () => appAtomRegistry,
   useCallback: (callback: unknown) => callback,
   useMemo: (create: () => unknown) => create(),
   useRef: (value: unknown) => ({ current: value }),
@@ -37,7 +45,8 @@ vi.mock("./useSettings", () => ({ useClientSettings: () => false }));
 vi.mock("./useHandleNewThread", () => ({ useNewThreadHandler: () => vi.fn() }));
 vi.mock("../composerDraftStore", () => ({ useComposerDraftStore: () => vi.fn() }));
 vi.mock("../terminalUiStateStore", () => ({ useTerminalUiStateStore: () => vi.fn() }));
-vi.mock("../uiStateStore", () => ({ useUiStateStore: () => vi.fn() }));
+const localReadMutation = vi.hoisted(() => vi.fn());
+vi.mock("../uiStateStore", () => ({ useUiStateStore: () => localReadMutation }));
 vi.mock("../lib/archivedThreadsState", () => ({ refreshArchivedThreadsForEnvironment: vi.fn() }));
 const threadShell = vi.hoisted(() => ({
   title: "Thread",
@@ -53,30 +62,35 @@ vi.mock("../state/entities", async (original) => ({
   readEnvironmentServerConfigLoaded: () => true,
   readThreadShell: () => threadShell,
 }));
-vi.mock("../state/use-atom-command", () => ({
-  useAtomCommand: (command: unknown) => {
-    switch (command) {
-      case threadEnvironment.pin:
-        return commands.pin;
-      case threadEnvironment.unpin:
-        return commands.unpin;
-      case threadEnvironment.archive:
-        return commands.archive;
-      case threadEnvironment.unarchive:
-        return commands.unarchive;
-      case threadEnvironment.settle:
-        return commands.settle;
-      case threadEnvironment.unsettle:
-        return commands.unsettle;
-      case threadEnvironment.snooze:
-        return commands.snooze;
-      case threadEnvironment.unsnooze:
-        return commands.unsnooze;
-      default:
-        return vi.fn();
-    }
-  },
-}));
+vi.mock("../state/use-atom-command", async (original) => {
+  const actual = await original<typeof import("../state/use-atom-command")>();
+  return {
+    useAtomCommand: (command: unknown, options?: Parameters<typeof actual.useAtomCommand>[1]) => {
+      if (command === threadEnvironment.markUnread)
+        return actual.useAtomCommand(threadEnvironment.markUnread, options);
+      switch (command) {
+        case threadEnvironment.pin:
+          return commands.pin;
+        case threadEnvironment.unpin:
+          return commands.unpin;
+        case threadEnvironment.archive:
+          return commands.archive;
+        case threadEnvironment.unarchive:
+          return commands.unarchive;
+        case threadEnvironment.settle:
+          return commands.settle;
+        case threadEnvironment.unsettle:
+          return commands.unsettle;
+        case threadEnvironment.snooze:
+          return commands.snooze;
+        case threadEnvironment.unsnooze:
+          return commands.unsnooze;
+        default:
+          return vi.fn();
+      }
+    },
+  };
+});
 
 const target = {
   environmentId: EnvironmentId.make("undo-env"),
@@ -265,5 +279,42 @@ describe("settle and snooze Undo", () => {
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
     });
+  });
+});
+
+describe("native Mark unread result", () => {
+  it("surfaces the typed refusal once without changing local read state", async () => {
+    const refusal = new OrchestrationV2DispatchCommandError({
+      commandId: CommandId.make("mark-unread-refused"),
+      commandType: "thread.mark-unread",
+      message: "Thread thread has no completed run to mark unread.",
+    });
+    vi.spyOn(threadEnvironment.markUnread, "run").mockResolvedValue(
+      AsyncResult.failure(Cause.fail(refusal)),
+    );
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("refusal");
+    localReadMutation.mockClear();
+    await useThreadActions().markThreadUnread(target);
+    expect(add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "error",
+        title: "Failed to mark thread unread",
+        description: refusal.message,
+      }),
+    );
+    expect(localReadMutation).not.toHaveBeenCalled();
+  });
+
+  it.each(["success", "interrupted"])("keeps %s native-owned and quiet", async (result) => {
+    vi.spyOn(threadEnvironment.markUnread, "run").mockResolvedValue(
+      result === "success"
+        ? AsyncResult.success({ sequence: 1 })
+        : AsyncResult.failure(Cause.interrupt()),
+    );
+    const add = vi.spyOn(toastManager, "add").mockReturnValue("unused");
+    localReadMutation.mockClear();
+    await useThreadActions().markThreadUnread(target);
+    expect(add).not.toHaveBeenCalled();
+    expect(localReadMutation).not.toHaveBeenCalled();
   });
 });

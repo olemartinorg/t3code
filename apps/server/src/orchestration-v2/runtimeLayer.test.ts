@@ -6407,6 +6407,46 @@ it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
       });
       const revisited = yield* orchestrator.getThreadShell(threadId);
       assert.deepEqual(revisited!.lastVisitedAt, turnCompletedAt);
+
+      // A newer visible run owns eligibility even while an older run is completed.
+      const activeAt = DateTime.makeUnsafe("2026-07-24T12:00:00.000Z");
+      const prior = projection.runs[0]!;
+      const activeRunId = RunId.make(`${threadId}:active`);
+      yield* (yield* EventSink.EventSinkV2).write({
+        commandId: CommandId.make(`${threadId}:active-seed`),
+        events: [
+          {
+            id: EventId.make(`${activeRunId}:event`),
+            type: "run.created",
+            threadId,
+            runId: activeRunId,
+            providerInstanceId: modelSelection.instanceId,
+            occurredAt: activeAt,
+            payload: {
+              ...prior,
+              id: activeRunId,
+              ordinal: 3,
+              status: "running",
+              requestedAt: activeAt,
+              startedAt: activeAt,
+              completedAt: null,
+            },
+          },
+        ],
+      });
+      const activeShell = yield* orchestrator.getThreadShell(threadId);
+      assert.isNull(activeShell!.latestRunCompletedAt);
+      const refused = yield* orchestrator
+        .dispatch({
+          type: "thread.mark-unread",
+          commandId: CommandId.make(`${threadId}:active-mark-unread`),
+          threadId,
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(refused, Orchestrator.OrchestratorDispatchError);
+      assert.include(String(refused.cause), "has no completed run to mark unread");
+      const afterRefusal = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(afterRefusal!.lastVisitedAt, turnCompletedAt);
     }),
   );
 });
