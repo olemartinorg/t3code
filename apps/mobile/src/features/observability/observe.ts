@@ -1,11 +1,14 @@
 import Constants from "expo-constants";
-import { Observe } from "expo-observe";
 
-// Importing expo-observe installs its global JS error handler; reports leave only through the relay.
 const relayUrl: unknown = Constants.expoConfig?.extra?.relay?.url;
 const appVariant: unknown = Constants.expoConfig?.extra?.appVariant;
 
 export const crashReportingAvailable = typeof relayUrl === "string" && relayUrl.trim() !== "";
+// Loading Observe installs its global error handler and requires its native module.
+// Integrations without a relay can omit that module entirely.
+const Observe = crashReportingAvailable
+  ? (require("expo-observe") as typeof import("expo-observe")).Observe
+  : undefined;
 
 interface PromiseRejectionTracker {
   readonly enablePromiseRejectionTracker?: (options: {
@@ -15,7 +18,7 @@ interface PromiseRejectionTracker {
 }
 
 // React Native tracks unhandled rejections only in development, for LogBox; Observe has no hook.
-if (!__DEV__) {
+if (!__DEV__ && Observe) {
   const hermes: PromiseRejectionTracker | undefined = Reflect.get(globalThis, "HermesInternal");
   hermes?.enablePromiseRejectionTracker?.({
     allRejections: true,
@@ -29,6 +32,7 @@ let latestConfiguration = 0;
 // Best effort: Observe skips the pass while it is backing off from a failed send.
 export async function setCrashReportsEnabled(enabled: boolean) {
   const configuration = ++latestConfiguration;
+  if (!Observe) return;
   const dispatchingEnabled = crashReportingAvailable && enabled;
   if (dispatchingEnabled) {
     await Observe.dispatchEvents();
@@ -40,9 +44,7 @@ export async function setCrashReportsEnabled(enabled: boolean) {
   });
 }
 
-if (!crashReportingAvailable) {
-  void setCrashReportsEnabled(false);
-} else {
+if (Observe) {
   // Observe keeps its last configuration across launches; configuring it off while the setting
   // loads would drop the last session's native crash. Imported lazily so the persistence graph
   // never runs ahead of the imports `index.ts` orders first.
