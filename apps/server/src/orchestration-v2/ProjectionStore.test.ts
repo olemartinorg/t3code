@@ -3840,6 +3840,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             kind: "user_input",
             createdAt: now,
             blocking,
+            responseCapability: responseCapability.type,
           });
         }
       }
@@ -4833,7 +4834,9 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.include(plan[sessionLookup], "(provider_session_id=?)");
         const errorLookups = plan.filter(
           (detail) =>
-            /^SEARCH (?:item|error) /.test(detail) && !detail.includes("(turn_item_id=?)"),
+            /^SEARCH (?:item|error) /.test(detail) &&
+            !detail.startsWith("SEARCH item EXISTS ") &&
+            !detail.includes("(turn_item_id=?)"),
         );
         assert.lengthOf(errorLookups, marker.includes("blocking") ? 2 : 1, marker);
         for (const errorLookup of errorLookups) {
