@@ -219,6 +219,7 @@ export const make = Effect.gen(function* () {
     ...(databaseMigration === undefined ? {} : { databaseMigration }),
     capabilities: {
       clientIntegrationVersion: 1,
+      ralphSupervisionVersion: 1,
       repositoryIdentity: true,
       connectionProbe: true,
       attachmentUploads: true,

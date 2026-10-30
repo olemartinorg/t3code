@@ -1,5 +1,7 @@
 import {
   AuthSessionId,
+  AuthOrchestrationReadScope,
+  AuthRalphSuperviseScope,
   AuthStandardClientScopes,
   AuthEnvironmentScopes,
   type AuthClientMetadata,
@@ -17,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
@@ -386,6 +389,15 @@ export class SessionStore extends Context.Service<
       readonly replaceActiveForSubjectAndMethod?: boolean;
       readonly replaceSessionId?: AuthSessionId;
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
+    readonly issueRalph: (
+      ownerId: string,
+      label: string,
+      ttl?: Duration.Duration,
+    ) => Effect.Effect<IssuedSession, SessionCredentialError>;
+    readonly renewRalph: (
+      token: string,
+      ttl?: Duration.Duration,
+    ) => Effect.Effect<IssuedSession, SessionCredentialError>;
     readonly verify: (token: string) => Effect.Effect<VerifiedSession, SessionCredentialError>;
     readonly issueWebSocketToken: (
       sessionId: AuthSessionId,
@@ -842,6 +854,145 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const ralphIssuance = yield* Semaphore.make(1);
+  const mintRalphRow = Effect.fn("SessionStore.mintRalphRow")(function* (
+    row: AuthSessions.AuthSessionRecord,
+  ) {
+    const now = yield* DateTime.now;
+    if (row.revokedAt !== null)
+      return yield* new SessionTokenRevokedError({
+        sessionId: row.sessionId,
+        revokedAt: row.revokedAt,
+      });
+    if (row.expiresAt.epochMilliseconds <= now.epochMilliseconds)
+      return yield* new SessionTokenExpiredError({
+        sessionId: row.sessionId,
+        expiresAt: row.expiresAt,
+        observedAt: now,
+      });
+    if (
+      !row.subject.startsWith("ralph-supervisor:") ||
+      row.method !== "bearer-access-token" ||
+      !row.scopes.includes(AuthRalphSuperviseScope) ||
+      row.scopes.some(
+        (scope) => scope !== AuthRalphSuperviseScope && scope !== AuthOrchestrationReadScope,
+      )
+    )
+      return yield* new InvalidSessionTokenPayloadError({
+        cause: "Not a narrow supervisor session.",
+      });
+    const payload = yield* encodeClaims({
+      v: 1,
+      kind: "session",
+      sid: row.sessionId,
+      sub: row.subject,
+      scopes: row.scopes,
+      method: row.method,
+      iat: row.issuedAt.epochMilliseconds,
+      exp: row.expiresAt.epochMilliseconds,
+    }).pipe(
+      Effect.map(base64UrlEncode),
+      Effect.mapError(
+        (cause) => new SessionCredentialIssueError({ sessionId: row.sessionId, cause }),
+      ),
+    );
+    return {
+      sessionId: row.sessionId,
+      token: `${payload}.${signPayload(payload, signingSecret)}`,
+      method: row.method,
+      client: toClientMetadata(row.client),
+      expiresAt: row.expiresAt,
+      scopes: row.scopes,
+    } satisfies IssuedSession;
+  });
+  const ralphTtl = (ttl?: Duration.Duration) => {
+    const millis = Duration.toMillis(ttl ?? Duration.hours(1));
+    return Number.isFinite(millis) && millis > 0 && millis <= Duration.toMillis(Duration.hours(1))
+      ? Effect.succeed(millis)
+      : Effect.fail(
+          new InvalidSessionTokenPayloadError({ cause: "Invalid supervisor credential lifetime." }),
+        );
+  };
+  const issueRalph: SessionStore["Service"]["issueRalph"] = Effect.fn("SessionStore.issueRalph")(
+    function* (ownerId, label, ttl) {
+      yield* ralphTtl(ttl);
+      return yield* ralphIssuance.withPermit(
+        Effect.gen(function* () {
+          const existing = yield* authSessions
+            .getBySubject(`ralph-supervisor:${ownerId}`)
+            .pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ cause })));
+          if (Option.isSome(existing)) return yield* mintRalphRow(existing.value);
+          return yield* issue({
+            subject: `ralph-supervisor:${ownerId}`,
+            method: "bearer-access-token",
+            scopes: [AuthOrchestrationReadScope, AuthRalphSuperviseScope],
+            ttl: ttl ?? Duration.hours(1),
+            client: { label, deviceType: "bot" },
+          });
+        }),
+      );
+    },
+  );
+  const renewRalph: SessionStore["Service"]["renewRalph"] = Effect.fn("SessionStore.renewRalph")(
+    function* (token, ttl) {
+      const session = yield* verify(token);
+      const millis = yield* ralphTtl(ttl);
+      const row = yield* authSessions
+        .getById({ sessionId: session.sessionId })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new SessionCredentialVerificationError({ sessionId: session.sessionId, cause }),
+          ),
+        );
+      if (Option.isNone(row))
+        return yield* new UnknownSessionTokenError({ sessionId: session.sessionId });
+      yield* mintRalphRow(row.value);
+      if (
+        row.value.subject !== session.subject ||
+        row.value.method !== session.method ||
+        row.value.scopes.length !== session.scopes.length ||
+        row.value.scopes.some((scope) => !session.scopes.includes(scope))
+      )
+        return yield* new InvalidSessionTokenPayloadError({
+          cause: "Supervisor credential identity changed.",
+        });
+      const now = yield* DateTime.now;
+      const expiresAt = DateTime.add(now, { milliseconds: millis });
+      const extended = yield* authSessions
+        .renewActive({ sessionId: session.sessionId, now, expiresAt })
+        .pipe(
+          Effect.mapError(
+            (cause) => new SessionCredentialIssueError({ sessionId: session.sessionId, cause }),
+          ),
+        );
+      // A failed conditional update is a definite denial, never permission to issue a replacement.
+      if (!extended)
+        return yield* new InvalidSessionTokenPayloadError({
+          cause: "Supervisor credential no longer renewable.",
+        });
+      const renewed = yield* authSessions
+        .getById({ sessionId: session.sessionId })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new SessionCredentialVerificationError({ sessionId: session.sessionId, cause }),
+          ),
+        );
+      if (Option.isNone(renewed))
+        return yield* new UnknownSessionTokenError({ sessionId: session.sessionId });
+      const result = yield* mintRalphRow(renewed.value);
+      const publicSession = yield* loadActiveSession(session.sessionId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SessionCredentialVerificationError({ sessionId: session.sessionId, cause }),
+        ),
+      );
+      if (Option.isSome(publicSession)) yield* emitUpsert(publicSession.value);
+      return result;
+    },
+  );
+
   const encodeWsClaims = Schema.encodeEffect(Schema.fromJsonString(WebSocketClaims));
   const issueWebSocketToken: SessionStore["Service"]["issueWebSocketToken"] = Effect.fn(
     "SessionStore.issueWebSocketToken",
@@ -1039,26 +1190,30 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         // Subscribe before reading: revocation can race with the WebSocket upgrade.
         const subscription = yield* PubSub.subscribe(changesPubSub);
-        const row = yield* authSessions
-          .getById({ sessionId })
-          .pipe(
-            Effect.mapError(
-              (cause) => new SessionCredentialVerificationError({ sessionId, cause }),
+        while (true) {
+          const row = yield* authSessions
+            .getById({ sessionId })
+            .pipe(
+              Effect.mapError(
+                (cause) => new SessionCredentialVerificationError({ sessionId, cause }),
+              ),
+            );
+          if (Option.isNone(row) || row.value.revokedAt !== null) return;
+          const now = yield* DateTime.now;
+          const remaining = row.value.expiresAt.epochMilliseconds - now.epochMilliseconds;
+          if (remaining <= 0) return;
+          yield* Effect.raceFirst(
+            Stream.fromSubscription(subscription).pipe(
+              Stream.filter((change) =>
+                change.type === "clientRemoved"
+                  ? change.sessionId === sessionId
+                  : change.clientSession.sessionId === sessionId,
+              ),
+              Stream.runHead,
             ),
+            Effect.sleep(Duration.millis(remaining)),
           );
-        if (Option.isNone(row) || row.value.revokedAt !== null) return;
-        const now = yield* DateTime.now;
-        const remaining = row.value.expiresAt.epochMilliseconds - now.epochMilliseconds;
-        if (remaining <= 0) return;
-        yield* Effect.raceFirst(
-          Stream.fromSubscription(subscription).pipe(
-            Stream.filter(
-              (change) => change.type === "clientRemoved" && change.sessionId === sessionId,
-            ),
-            Stream.runHead,
-          ),
-          Effect.sleep(Duration.millis(remaining)),
-        );
+        }
       }),
     );
   });
@@ -1067,6 +1222,8 @@ const make = Effect.gen(function* () {
     cookieName,
     legacyCookieName,
     issue,
+    issueRalph,
+    renewRalph,
     verify,
     issueWebSocketToken,
     verifyWebSocketToken,

@@ -11,6 +11,8 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   AuthAccessTokenResult,
+  AuthRalphSessionInput,
+  AuthRalphSessionResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
   AuthCreatePairingCredentialInput,
@@ -553,6 +555,21 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
       success: AuthAccessTokenResult,
       error: EnvironmentTokenExchangeErrors,
     }),
+  )
+  .add(
+    HttpApiEndpoint.post("ralphSession", "/api/auth/ralph-session", {
+      headers: OptionalBearerHeaders,
+      payload: AuthRalphSessionInput,
+      success: AuthRalphSessionResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentAuthInvalidError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("renewRalphSession", "/api/auth/ralph-session/renew", {
+      headers: OptionalBearerHeaders,
+      success: AuthRalphSessionResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentAuthInvalidError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
     HttpApiEndpoint.post("webSocketTicket", "/api/auth/websocket-ticket", {

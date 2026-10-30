@@ -29,6 +29,7 @@ export type ServerAuthSessionMethod = typeof ServerAuthSessionMethod.Type;
 
 export const AuthOrchestrationReadScope = "orchestration:read" as const;
 export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
+export const AuthRalphSuperviseScope = "ralph:supervise" as const;
 export const AuthSettingsWriteScope = "settings:write" as const;
 export const AuthProvidersManageScope = "providers:manage" as const;
 export const AuthEnvironmentMaintainScope = "environment:maintain" as const;
@@ -46,6 +47,7 @@ export const AuthAccessWriteScope = "access:write" as const;
 export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
 export const AuthEnvironmentScope = Schema.Literals([
+  AuthRalphSuperviseScope,
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -236,6 +238,17 @@ export const AuthAccessTokenResult = Schema.Struct({
   scope: TrimmedNonEmptyString,
 });
 export type AuthAccessTokenResult = typeof AuthAccessTokenResult.Type;
+
+/** Direct supervisor credentials are never renderer, phone or public-state fields. */
+export const AuthRalphSessionInput = Schema.Struct({
+  ownerId: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString,
+});
+export const AuthRalphSessionResult = Schema.Struct({
+  sessionId: AuthSessionId,
+  token: Schema.String,
+  expiresAt: Schema.DateTimeUtc,
+});
 
 export const AuthWebSocketTicketResult = Schema.Struct({
   ticket: TrimmedNonEmptyString,

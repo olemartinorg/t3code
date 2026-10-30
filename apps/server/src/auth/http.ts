@@ -1,6 +1,9 @@
 import {
   authScopeRequiredResponse,
   AuthAccessWriteScope,
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthRalphSuperviseScope,
   AuthStandardClientScopes,
   AuthGrantScope,
   EnvironmentAuthInvalidError,
@@ -409,6 +412,58 @@ export const layer = HttpApiBuilder.group(
             failEnvironmentInternal("access_token_issuance_failed", error),
           ),
         ),
+      )
+      .handle(
+        "ralphSession",
+        Effect.fn("environment.auth.ralphSession")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthAccessWriteScope);
+          yield* requireEnvironmentScope(AuthOrchestrationOperateScope);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          yield* appendCredentialResponseHeaders;
+          const issued = yield* sessions.issueRalph(args.payload.ownerId, args.payload.label).pipe(
+            Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
+              failEnvironmentAuthInvalid("invalid_credential"),
+            ),
+            Effect.catchIf(Schema.is(SessionStore.SessionCredentialInternalError), (error) =>
+              failEnvironmentInternal("internal_error", error),
+            ),
+          );
+          return {
+            sessionId: issued.sessionId,
+            token: issued.token,
+            expiresAt: DateTime.toUtc(issued.expiresAt),
+          };
+        }),
+      )
+      .handle(
+        "renewRalphSession",
+        Effect.fn("environment.auth.renewRalphSession")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthRalphSuperviseScope);
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const credential = EnvironmentAuth.selectRequestCredential(
+            request,
+            sessions.cookieName,
+            sessions.legacyCookieName,
+          );
+          if (credential?.source !== "bearer")
+            return yield* failEnvironmentAuthInvalid("invalid_credential");
+          yield* appendCredentialResponseHeaders;
+          const issued = yield* sessions.renewRalph(credential.token).pipe(
+            Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
+              failEnvironmentAuthInvalid("invalid_credential"),
+            ),
+            Effect.catchIf(Schema.is(SessionStore.SessionCredentialInternalError), (error) =>
+              failEnvironmentInternal("internal_error", error),
+            ),
+          );
+          return {
+            sessionId: issued.sessionId,
+            token: issued.token,
+            expiresAt: DateTime.toUtc(issued.expiresAt),
+          };
+        }),
       )
       .handle(
         "webSocketTicket",

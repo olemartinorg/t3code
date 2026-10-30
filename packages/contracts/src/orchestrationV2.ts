@@ -433,7 +433,93 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
 
+/** Durable native admission fence. Clearing it never interrupts an admitted run. */
+export const OrchestrationV2RalphBinding = Schema.Struct({
+  ownerId: TrimmedNonEmptyString,
+  loopId: TrimmedNonEmptyString,
+  revision: PositiveInt,
+});
+export type OrchestrationV2RalphBinding = typeof OrchestrationV2RalphBinding.Type;
+
+export const OrchestrationV2RalphReceipt = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("armed") }),
+  Schema.Struct({
+    kind: Schema.Literal("admitted"),
+    runId: RunId,
+    origin: Schema.Literals(["ralph", "human"]),
+  }),
+  Schema.Struct({ kind: Schema.Literal("deferred") }),
+  Schema.Struct({
+    kind: Schema.Literal("resolved"),
+    eventId: EventId,
+    disposition: Schema.Literals(["consumed", "released"]),
+  }),
+  Schema.Struct({ kind: Schema.Literal("retired") }),
+  Schema.Struct({
+    kind: Schema.Literal("rejected"),
+    reason: Schema.Literals(["identity-changed", "access-denied", "unsupported", "stopping"]),
+  }),
+]);
+export type OrchestrationV2RalphReceipt = typeof OrchestrationV2RalphReceipt.Type;
+
+/** A bounded, once-recorded root result; no transcript body crosses this boundary. */
+export const OrchestrationV2RalphOutcome = Schema.Struct({
+  eventId: EventId,
+  runId: RunId,
+  binding: OrchestrationV2RalphBinding,
+  admissionCommandId: Schema.NullOr(CommandId),
+  occurredAt: Schema.Number,
+  finalResponse: Schema.Literals(["empty", "ralph-complete", "other"]),
+  workDurationMs: NonNegativeInt,
+  recovery: Schema.Boolean,
+  disposition: Schema.Literals(["pending", "consumed", "released"]),
+});
+export type OrchestrationV2RalphOutcome = typeof OrchestrationV2RalphOutcome.Type;
+
+/** Native-selected terminal visibility. Delivery/read/away policy remains with each consumer. */
+export const OrchestrationV2RalphNotification = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("quiet") }),
+  Schema.Struct({
+    kind: Schema.Literal("released"),
+    eventId: EventId,
+    runId: RunId,
+    occurredAt: Schema.Number,
+    recovery: Schema.Boolean,
+  }),
+]);
+export type OrchestrationV2RalphNotification = typeof OrchestrationV2RalphNotification.Type;
+
+export const OrchestrationV2RalphAction = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("arm") }),
+  Schema.Struct({
+    kind: Schema.Literal("admit"),
+    text: TrimmedNonEmptyString,
+    recovery: Schema.Boolean,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("resolve"),
+    eventId: EventId,
+    disposition: Schema.Literals(["consumed", "released"]),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("retire"),
+    decisions: Schema.Array(
+      Schema.Struct({ eventId: EventId, disposition: Schema.Literals(["consumed", "released"]) }),
+    ),
+  }),
+]);
+
 export const OrchestrationV2AppThread = Schema.Struct({
+  ralphBinding: Schema.optional(Schema.NullOr(OrchestrationV2RalphBinding)),
+  ralphRetiredBinding: Schema.optional(OrchestrationV2RalphBinding),
+  /** Stored in the immutable command event; receipt lookup does not depend on the current binding. */
+  ralphLastReceipt: Schema.optional(
+    Schema.Struct({
+      commandId: CommandId,
+      binding: OrchestrationV2RalphBinding,
+      result: OrchestrationV2RalphReceipt,
+    }),
+  ),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -665,6 +751,14 @@ export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
 export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_preparation_failed";
 
 export const OrchestrationV2Run = Schema.Struct({
+  ralphAdmission: Schema.optional(
+    Schema.Struct({
+      binding: OrchestrationV2RalphBinding,
+      commandId: CommandId,
+      origin: Schema.Literals(["ralph", "human"]),
+    }),
+  ),
+  ralphOutcome: Schema.optional(OrchestrationV2RalphOutcome),
   id: RunId,
   threadId: ThreadId,
   ordinal: PositiveInt,
@@ -2043,6 +2137,11 @@ export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
 export const OrchestrationV2ThreadShell = Schema.Struct({
+  ralphRetiredBinding: Schema.optional(OrchestrationV2RalphBinding),
+  ralphBinding: Schema.optional(Schema.NullOr(OrchestrationV2RalphBinding)),
+  ralphOutcome: Schema.optional(Schema.NullOr(OrchestrationV2RalphOutcome)),
+  ralphReleasedOutcome: Schema.optional(Schema.NullOr(OrchestrationV2RalphOutcome)),
+  ralphNotification: Schema.optional(Schema.NullOr(OrchestrationV2RalphNotification)),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -2875,7 +2974,66 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
 ]);
 export type OrchestrationV2DomainEventJson = typeof OrchestrationV2DomainEventJson.Type;
 
+const IdleStopIdentity = {
+  ownerId: TrimmedNonEmptyString,
+  runtimeId: TrimmedNonEmptyString,
+  bootId: TrimmedNonEmptyString,
+  reservationId: TrimmedNonEmptyString,
+};
+export const OrchestrationV2IdleStopInput = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("inspect"),
+    ownerId: TrimmedNonEmptyString,
+    runtimeId: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({ action: Schema.Literal("reserve"), ...IdleStopIdentity }),
+  Schema.Struct({ action: Schema.Literal("release"), ...IdleStopIdentity }),
+  Schema.Struct({
+    action: Schema.Literal("reconcile"),
+    ...IdleStopIdentity,
+    observedBootId: TrimmedNonEmptyString,
+    outcome: Schema.Literals(["stop-failed", "native-replaced"]),
+  }),
+]);
+export type OrchestrationV2IdleStopInput = typeof OrchestrationV2IdleStopInput.Type;
+export const OrchestrationV2IdleStopResult = Schema.Struct({
+  reservation: Schema.optionalKey(Schema.Struct(IdleStopIdentity)),
+  bootId: TrimmedNonEmptyString,
+  result: Schema.Literals(["available", "reserved", "blocked", "released", "identity-changed"]),
+});
+export type OrchestrationV2IdleStopResult = typeof OrchestrationV2IdleStopResult.Type;
+
+export const OrchestrationV2RalphSnapshot = Schema.Struct({
+  capabilityVersion: Schema.Literal(1),
+  threads: Schema.Array(
+    Schema.Struct({
+      thread: OrchestrationV2ThreadShell,
+      humanQueue: Schema.Literals(["empty", "ready", "held"]),
+      work: Schema.Struct({
+        executing: Schema.Boolean,
+        eventWait: Schema.Boolean,
+        inputPending: Schema.Boolean,
+      }),
+      outcomes: Schema.Array(OrchestrationV2RalphOutcome).check(Schema.isMaxLength(64)),
+    }),
+  ),
+});
+export type OrchestrationV2RalphSnapshot = typeof OrchestrationV2RalphSnapshot.Type;
+export const OrchestrationV2RalphCommandLookup = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("absent") }),
+  Schema.Struct({ kind: Schema.Literal("receipt"), receipt: OrchestrationV2RalphReceipt }),
+]);
+export type OrchestrationV2RalphCommandLookup = typeof OrchestrationV2RalphCommandLookup.Type;
+
 export const OrchestrationV2Command = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("ralph.control"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    projectId: ProjectId,
+    binding: OrchestrationV2RalphBinding,
+    action: OrchestrationV2RalphAction,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.stop"),
     commandId: CommandId,
@@ -3536,6 +3694,9 @@ export type OrchestrationV2ServerCommand = OrchestrationV2Command | Orchestratio
 
 export const ORCHESTRATION_V2_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
+  getRalphSnapshot: "orchestration.getRalphSnapshot",
+  idleStop: "orchestration.idleStop",
+  getRalphCommandReceipt: "orchestration.getRalphCommandReceipt",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
@@ -4082,6 +4243,15 @@ export class OrchestrationV2SearchThreadError extends Schema.TaggedError<Orchest
 }
 
 export const OrchestrationV2RpcSchemas = {
+  idleStop: { input: OrchestrationV2IdleStopInput, output: OrchestrationV2IdleStopResult },
+  getRalphSnapshot: {
+    input: Schema.Struct({ ownerId: TrimmedNonEmptyString }),
+    output: Schema.Struct({ environmentId: EnvironmentId, ...OrchestrationV2RalphSnapshot.fields }),
+  },
+  getRalphCommandReceipt: {
+    input: Schema.Struct({ ownerId: TrimmedNonEmptyString, commandId: CommandId }),
+    output: OrchestrationV2RalphCommandLookup,
+  },
   searchThread: {
     input: OrchestrationV2SearchThreadInput,
     output: OrchestrationV2SearchThreadResult,

@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -104,6 +105,15 @@ export class AuthSessionRepository extends Context.Service<
     readonly createIfAbsent: (
       input: CreateAuthSessionInput,
     ) => Effect.Effect<void, AuthSessionRepositoryError>;
+    readonly getBySubject: (
+      subject: string,
+    ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
+    /** Never revives revoked or expired identities, including a revoke racing renewal. */
+    readonly renewActive: (input: {
+      sessionId: AuthSessionId;
+      now: DateTime.Utc;
+      expiresAt: DateTime.Utc;
+    }) => Effect.Effect<boolean, AuthSessionRepositoryError>;
     readonly getById: (
       input: GetAuthSessionByIdInput,
     ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
@@ -420,6 +430,37 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const getBySubject: AuthSessionRepository["Service"]["getBySubject"] = (subject) =>
+    sql<{
+      readonly session_id: string;
+    }>`SELECT session_id FROM auth_sessions WHERE subject = ${subject} ORDER BY issued_at, session_id LIMIT 1`.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.getBySubject:query",
+          "AuthSessionRepository.getBySubject:decodeRow",
+        ),
+      ),
+      Effect.flatMap((rows) =>
+        rows[0] === undefined
+          ? Effect.succeedNone
+          : getById({ sessionId: AuthSessionId.make(rows[0].session_id) }),
+      ),
+    );
+  const renewActive: AuthSessionRepository["Service"]["renewActive"] = (input) =>
+    sql`UPDATE auth_sessions SET expires_at = MAX(expires_at, ${DateTime.formatIso(input.expiresAt)})
+      WHERE session_id = ${input.sessionId} AND revoked_at IS NULL AND expires_at > ${DateTime.formatIso(input.now)}
+      RETURNING session_id`.pipe(
+      Effect.map((rows) => rows.length > 0),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.renewActive:query",
+          "AuthSessionRepository.renewActive:decodeRow",
+          { sessionId: input.sessionId },
+        ),
+      ),
+    );
+
   const listActive: AuthSessionRepository["Service"]["listActive"] = (input) =>
     listActiveSessionRows(input).pipe(
       NodeSqliteClient.readOnly,
@@ -485,6 +526,8 @@ export const make = Effect.gen(function* () {
     createReplacingActive,
     createIfAbsent,
     getById,
+    getBySubject,
+    renewActive,
     listActive,
     revoke,
     revokeAllExcept,

@@ -1706,6 +1706,28 @@ const WsSubscribeDeviceStateRpc = Rpc.make(WS_METHODS.subscribeDeviceState, {
   stream: true,
 });
 
+const WsOrchestrationV2IdleStopRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.idleStop, {
+  payload: OrchestrationV2RpcSchemas.idleStop.input,
+  success: OrchestrationV2RpcSchemas.idleStop.output,
+  error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
+});
+const WsOrchestrationV2GetRalphSnapshotRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getRalphSnapshot,
+  {
+    payload: OrchestrationV2RpcSchemas.getRalphSnapshot.input,
+    success: OrchestrationV2RpcSchemas.getRalphSnapshot.output,
+    error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+const WsOrchestrationV2GetRalphCommandReceiptRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getRalphCommandReceipt,
+  {
+    payload: OrchestrationV2RpcSchemas.getRalphCommandReceipt.input,
+    success: OrchestrationV2RpcSchemas.getRalphCommandReceipt.output,
+    error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2DispatchCommandRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, {
   payload: OrchestrationV2RpcSchemas.dispatchCommand.input,
   success: OrchestrationV2RpcSchemas.dispatchCommand.output,
@@ -2150,6 +2172,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationV2DispatchCommandRpc,
+  WsOrchestrationV2IdleStopRpc,
+  WsOrchestrationV2GetRalphSnapshotRpc,
+  WsOrchestrationV2GetRalphCommandReceiptRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2StopWorkflowRpc,
   WsOrchestrationV2GetTurnItemRpc,
@@ -2167,4 +2192,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,
+).middleware(RpcScopeAuthorization);
+
+/** Exact native subset used by the independently packaged supervisor. */
+export const RalphSupervisorRpcGroup = RpcGroup.make(
+  WsOrchestrationV2GetRalphSnapshotRpc,
+  WsOrchestrationV2GetRalphCommandReceiptRpc,
+  WsOrchestrationV2DispatchCommandRpc,
+  WsOrchestrationV2SubscribeShellRpc,
+  WsScheduledTasksSubscribeRpc,
 ).middleware(RpcScopeAuthorization);

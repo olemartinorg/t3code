@@ -17,6 +17,7 @@ import {
   AuthFilesystemWriteScope,
   AuthDiagnosticsReadScope,
   AuthOrchestrationOperateScope,
+  AuthRalphSuperviseScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
   AuthRelayReadScope,
@@ -39,6 +40,9 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
+  [ORCHESTRATION_V2_WS_METHODS.idleStop]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.getRalphSnapshot]: AuthRalphSuperviseScope,
+  [ORCHESTRATION_V2_WS_METHODS.getRalphCommandReceipt]: AuthRalphSuperviseScope,
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
@@ -245,6 +249,14 @@ const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  if (
+    method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand &&
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    payload.type === "ralph.control"
+  )
+    return [AuthRalphSuperviseScope];
   if (method === WS_METHODS.serverRetryResourceTelemetry) {
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }
@@ -278,7 +290,11 @@ export const layer = (
 ) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
     const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
-    const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
+    const requiredScope = requiredScopes.find(
+      (scope) =>
+        !scopes.includes(scope) &&
+        !(scope === AuthRalphSuperviseScope && scopes.includes(AuthOrchestrationOperateScope)),
+    );
     if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
     return onAuthorized === undefined
       ? effect
@@ -290,3 +306,12 @@ export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironm
   input.retryHostId || input.updateTool
     ? AuthOrchestrationOperateScope
     : AuthOrchestrationReadScope;
+
+export const authorizeRalphOwner = (
+  session: { readonly scopes: ReadonlyArray<AuthEnvironmentScope>; readonly subject: string },
+  ownerId: string,
+) =>
+  session.scopes.includes(AuthOrchestrationOperateScope) ||
+  session.subject === `ralph-supervisor:${ownerId}`
+    ? Effect.void
+    : Effect.fail(rpcAuthorizationError(AuthRalphSuperviseScope));
