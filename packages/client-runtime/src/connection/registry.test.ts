@@ -149,6 +149,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialProfiles: ReadonlyArray<ConnectionProfile> = [],
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
+    readonly ownedDataCleanup?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly prepareError?: ConnectionBlockedError;
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly beforeRegistrationRegister?: (
@@ -305,7 +306,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   });
   const ownedDataCleanup = Persistence.EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) =>
-      Ref.update(ownedDataClears, (environmentIds) => [...environmentIds, environmentId]),
+      Ref.update(ownedDataClears, (environmentIds) => [...environmentIds, environmentId]).pipe(
+        Effect.andThen(options?.ownedDataCleanup?.(environmentId) ?? Effect.void),
+      ),
   });
   const networkStatus = yield* SubscriptionRef.make<"unknown" | "offline" | "online">("online");
   const connectivity = Connectivity.Connectivity.of({
@@ -520,6 +523,86 @@ function awaitConnectionState(
 }
 
 describe("EnvironmentRegistry", () => {
+  it.effect(
+    "leased platform admission preserves disabled environments until true reconciliation removes them",
+    () =>
+      Effect.gen(function* () {
+        const composer = new Map([
+          [TARGET.environmentId, { text: "unsent A", attachments: ["local-A.png"] }],
+        ]);
+        const outbox = new Map([
+          [TARGET.environmentId, [{ messageId: "accepted-A", text: "queued A" }]],
+        ]);
+        const harness = yield* makeHarness([], [], [], {
+          ownedDataCleanup: (environmentId) =>
+            Effect.sync(() => {
+              composer.delete(environmentId);
+              outbox.delete(environmentId);
+            }),
+        });
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const a = new PrimaryConnectionRegistration({ target: TARGET });
+          const b = new PrimaryConnectionRegistration({ target: SECOND_TARGET });
+          yield* registry.registerPlatform(a);
+          yield* awaitConnectionState(
+            registry,
+            TARGET.environmentId,
+            (state) => state.phase === "connected",
+          );
+          yield* registry.setEnabled(TARGET.environmentId, false);
+          yield* registry.registerPlatform(b);
+          yield* awaitConnectionState(
+            registry,
+            SECOND_TARGET.environmentId,
+            (state) => state.phase === "connected",
+          );
+          const sessionsAfterB = (yield* Ref.get(harness.sessions)).length;
+          // Late retirement of A cannot enable it or retire B.
+          yield* registry.setEnabled(TARGET.environmentId, false);
+          yield* Effect.yieldNow;
+          expect(
+            (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.enabled,
+          ).toBe(false);
+          expect(
+            (yield* SubscriptionRef.get(registry.entries)).get(SECOND_TARGET.environmentId)
+              ?.enabled,
+          ).toBe(true);
+          expect(yield* Ref.get(harness.sessions)).toHaveLength(sessionsAfterB);
+          expect(composer.get(TARGET.environmentId)).toEqual({
+            text: "unsent A",
+            attachments: ["local-A.png"],
+          });
+          expect(outbox.get(TARGET.environmentId)).toEqual([
+            { messageId: "accepted-A", text: "queued A" },
+          ]);
+          expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+          // Reselect A with a newly admitted lease; B is retired first.
+          yield* registry.setEnabled(SECOND_TARGET.environmentId, false);
+          yield* registry.registerPlatform(a);
+          yield* registry.setEnabled(TARGET.environmentId, true);
+          yield* awaitConnectionState(
+            registry,
+            TARGET.environmentId,
+            (state) => state.phase === "connected",
+          );
+          expect(yield* Ref.get(harness.sessions)).toHaveLength(sessionsAfterB + 1);
+          yield* registry.setEnabled(TARGET.environmentId, false);
+          yield* Effect.yieldNow;
+          expect(composer.has(TARGET.environmentId)).toBe(true);
+          expect(outbox.has(TARGET.environmentId)).toBe(true);
+          // Full desired-set reconciliation still owns destructive removal.
+          yield* registry.reconcilePlatform([]);
+          expect(composer.has(TARGET.environmentId)).toBe(false);
+          expect(outbox.has(TARGET.environmentId)).toBe(false);
+          expect(yield* Ref.get(harness.ownedDataClears)).toEqual([
+            TARGET.environmentId,
+            SECOND_TARGET.environmentId,
+          ]);
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
   it.effect("replays connected state when arming a desktop commit observer", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness([TARGET]);
